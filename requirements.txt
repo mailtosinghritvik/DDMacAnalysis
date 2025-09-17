@@ -1,0 +1,52 @@
+# Core Streamlit and web framework
+streamlit==1.45.1
+
+# Data manipulation and analysis
+pandas==2.3.2
+numpy==1.26.4
+
+# Visualization libraries
+plotly==5.22.0
+matplotlib==3.9.3
+seaborn==0.13.2
+
+# Machine learning (optional)
+scikit-learn==1.5.1
+
+# Excel file processing
+openpyxl==3.1.5
+xlsxwriter==3.2.0
+
+# Date and time handling
+python-dateutil==2.9.0
+
+# Scientific computing
+scipy==1.14.1
+
+# HTTP requests for API integration
+requests==2.32.3
+urllib3==2.2.3
+
+# Database integration (Supabase)
+supabase==2.8.0
+postgrest==0.17.0
+
+# Additional utilities
+python-dotenv==1.0.1  # For environment variables
+cachetools==5.5.0     # For API response caching
+typing-extensions==4.12.2
+
+# Data validation
+pydantic==2.10.3
+
+# Progress bars and UI enhancements  
+tqdm==4.67.1
+
+# JSON handling
+jsonschema==4.23.0
+
+# Timezone handling
+pytz==2024.2
+
+# Memory optimization
+psutil==6.1.0
