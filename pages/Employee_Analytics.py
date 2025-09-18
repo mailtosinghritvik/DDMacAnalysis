@@ -124,7 +124,8 @@ def get_employee_data():
             progress_data = get_progress_comparison(api_data, estimates_data)
     
     except Exception as e:
-        st.error(f"Error fetching employee data: {str(e)}")
+        pass
+        #   st.error(f"Error fetching employee data: {str(e)}")
     
     return api_data, estimates_data, progress_data
 

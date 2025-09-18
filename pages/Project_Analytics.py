@@ -262,39 +262,191 @@ def create_project_risk_matrix(progress_data):
     fig.update_layout(height=400)
     return fig, df
 
-def create_project_team_allocation(api_data):
-    """Create project team allocation chart"""
-    if not api_data:
+def create_project_team_allocation(team_allocation_data):
+    """Create project team allocation chart using real API data"""
+    if team_allocation_data is None or team_allocation_data.empty:
+        return None, None
+    
+    # Create efficiency vs hours scatter plot
+    fig = px.scatter(
+        team_allocation_data,
+        x='Total_Hours',
+        y='Efficiency_Score',
+        size='Days_Worked',
+        color='Status',
+        hover_data=['Client', 'Avg_Hours_Per_Day', 'Days_Worked'],
+        title='Team Allocation: Efficiency vs Total Hours Analysis',
+        labels={
+            'Total_Hours': 'Total Hours',
+            'Efficiency_Score': 'Efficiency Score (%)',
+            'Days_Worked': 'Days Worked'
+        },
+        color_discrete_map={
+            'High Performance': '#28a745',
+            'Good Performance': '#17a2b8',
+            'Average Performance': '#ffc107',
+            'Low Performance': '#dc3545'
+        }
+    )
+    
+    # Add efficiency reference lines
+    fig.add_hline(y=80, line_dash="dash", line_color="green", annotation_text="High Performance (80%)")
+    fig.add_hline(y=60, line_dash="dash", line_color="blue", annotation_text="Good Performance (60%)")
+    fig.add_hline(y=40, line_dash="dash", line_color="orange", annotation_text="Average Performance (40%)")
+    
+    # Improve layout
+    fig.update_layout(
+        height=600,
+        xaxis_title="Total Hours (Log Scale)",
+        yaxis_title="Efficiency Score (%)",
+        xaxis=dict(type="log"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    return fig, team_allocation_data
+
+def create_team_allocation_summary_chart(team_allocation_data):
+    """Create team allocation summary bar chart"""
+    if team_allocation_data is None or team_allocation_data.empty:
         return None
     
-    # Mock team allocation data
-    allocation_data = [
-        {'Project': 'TechCorp Mobile App', 'Team Size': 4, 'Lead': 'Alice Johnson', 'Total Hours': 280},
-        {'Project': 'GlobalSoft Dashboard', 'Team Size': 3, 'Lead': 'Carol Davis', 'Total Hours': 220},
-        {'Project': 'StartupX Website', 'Team Size': 2, 'Lead': 'Bob Smith', 'Total Hours': 180},
-        {'Project': 'Internal Tools', 'Team Size': 2, 'Lead': 'David Wilson', 'Total Hours': 160},
-        {'Project': 'Testing Framework', 'Team Size': 1, 'Lead': 'Emma Brown', 'Total Hours': 120}
-    ]
+    # Group by status and calculate metrics
+    status_summary = team_allocation_data.groupby('Status').agg({
+        'Total_Hours': 'sum',
+        'Client': 'count',
+        'Efficiency_Score': 'mean'
+    }).reset_index()
     
-    df = pd.DataFrame(allocation_data)
+    status_summary.columns = ['Status', 'Total_Hours', 'Client_Count', 'Avg_Efficiency']
     
-    # Create bubble chart
-    fig = px.scatter(
-        df,
-        x='Team Size',
-        y='Total Hours',
-        size='Total Hours',
-        color='Project',
-        hover_data=['Lead'],
-        title='Project Team Allocation & Hours',
+    # Create horizontal bar chart
+    fig = px.bar(
+        status_summary,
+        x='Total_Hours',
+        y='Status',
+        color='Status',
+        orientation='h',
+        title='Team Allocation Summary by Performance Status',
         labels={
-            'Team Size': 'Team Size (People)',
-            'Total Hours': 'Total Hours Invested'
+            'Total_Hours': 'Total Hours',
+            'Status': 'Performance Status'
+        },
+        color_discrete_map={
+            'High Performance': '#28a745',
+            'Good Performance': '#17a2b8',
+            'Average Performance': '#ffc107',
+            'Low Performance': '#dc3545'
+        }
+    )
+    
+    # Add client count and efficiency as text annotations
+    for i, row in status_summary.iterrows():
+        fig.add_annotation(
+            x=row['Total_Hours'] + max(status_summary['Total_Hours']) * 0.01,
+            y=row['Status'],
+            text=f"{int(row['Client_Count'])} clients<br>Avg: {row['Avg_Efficiency']:.1f}%",
+            showarrow=False,
+            font=dict(size=10),
+            align="left"
+        )
+    
+    # Add percentage annotations
+    total_hours = status_summary['Total_Hours'].sum()
+    for i, row in status_summary.iterrows():
+        pct = (row['Total_Hours'] / total_hours) * 100
+        fig.add_annotation(
+            x=row['Total_Hours'] / 2,
+            y=row['Status'],
+            text=f"{pct:.1f}%",
+            showarrow=False,
+            font=dict(size=12, color="white", family="Arial Black"),
+            align="center"
+        )
+    
+    fig.update_layout(
+        height=400,
+        xaxis_title="Total Hours",
+        yaxis_title="Performance Status",
+        showlegend=False
+    )
+    return fig
+
+def create_client_hours_distribution(team_allocation_data):
+    """Create client hours distribution pie chart"""
+    if team_allocation_data is None or team_allocation_data.empty:
+        return None
+    
+    # Get top 10 clients by hours
+    top_clients = team_allocation_data.nlargest(10, 'Total_Hours')
+    
+    fig = px.pie(
+        top_clients,
+        values='Total_Hours',
+        names='Client',
+        title='Top 10 Clients by Total Hours',
+        color_discrete_sequence=px.colors.qualitative.Set3
+    )
+    
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.update_layout(height=400)
+    return fig
+
+def create_efficiency_distribution_chart(team_allocation_data):
+    """Create efficiency distribution histogram"""
+    if team_allocation_data is None or team_allocation_data.empty:
+        return None
+    
+    fig = px.histogram(
+        team_allocation_data,
+        x='Efficiency_Score',
+        nbins=20,
+        title='Efficiency Score Distribution',
+        labels={'Efficiency_Score': 'Efficiency Score (%)', 'count': 'Number of Clients'},
+        color_discrete_sequence=['#17a2b8']
+    )
+    
+    # Add efficiency reference lines
+    fig.add_vline(x=80, line_dash="dash", line_color="green", annotation_text="High (80%)")
+    fig.add_vline(x=60, line_dash="dash", line_color="blue", annotation_text="Good (60%)")
+    fig.add_vline(x=40, line_dash="dash", line_color="orange", annotation_text="Avg (40%)")
+    
+    fig.update_layout(height=400)
+    return fig
+
+def create_hours_vs_days_chart(team_allocation_data):
+    """Create hours vs days worked scatter plot"""
+    if team_allocation_data is None or team_allocation_data.empty:
+        return None
+    
+    fig = px.scatter(
+        team_allocation_data,
+        x='Days_Worked',
+        y='Total_Hours',
+        size='Efficiency_Score',
+        color='Status',
+        hover_data=['Client', 'Avg_Hours_Per_Day'],
+        title='Hours vs Days Worked Analysis',
+        labels={
+            'Days_Worked': 'Days Worked',
+            'Total_Hours': 'Total Hours',
+            'Efficiency_Score': 'Efficiency Score'
+        },
+        color_discrete_map={
+            'High Performance': '#28a745',
+            'Good Performance': '#17a2b8',
+            'Average Performance': '#ffc107',
+            'Low Performance': '#dc3545'
         }
     )
     
     fig.update_layout(height=400)
-    return fig, df
+    return fig
 
 def display_project_kpis(api_data, estimates_data, progress_data):
     """Display project-level KPIs"""
@@ -463,70 +615,390 @@ def main():
     with tab4:
         st.subheader("Team Allocation & Resource Management")
         
-        # Team allocation chart - simplified version
-        if api_data and 'employees' in api_data:
-            import plotly.express as px
+        # Get team allocation data from API
+        team_allocation_data = api_data.get('team_allocation') if api_data else None
+        
+        if team_allocation_data is not None and not team_allocation_data.empty:
+            # Display KPIs for team allocation
+            col1, col2, col3, col4 = st.columns(4)
             
-            # Create simplified team allocation data
-            employees = api_data['employees'][:5]  # Show top 5
-            allocation = [85, 92, 78, 88, 95]  # Sample allocation percentages
+            with col1:
+                total_hours = team_allocation_data['Total_Hours'].sum()
+                st.metric("Total Hours", f"{total_hours:,.0f}")
             
-            team_data = {
-                'Employee': employees,
-                'Allocation %': allocation,
-                'Status': ['Optimal' if x > 80 else 'Under-utilized' for x in allocation]
-            }
+            with col2:
+                total_clients = len(team_allocation_data)
+                st.metric("Active Clients", total_clients)
             
-            fig = px.bar(team_data, x='Employee', y='Allocation %', 
-                        color='Status', title='Team Resource Allocation')
-            st.plotly_chart(fig, use_container_width=True)
+            with col3:
+                avg_efficiency = team_allocation_data['Efficiency_Score'].mean()
+                st.metric("Avg Efficiency", f"{avg_efficiency:.1f}%")
+            
+            with col4:
+                high_performers = len(team_allocation_data[team_allocation_data['Status'] == 'High Performance'])
+                st.metric("High Performers", high_performers)
+            
+            # Main allocation chart
+            allocation_fig, allocation_df = create_project_team_allocation(team_allocation_data)
+            if allocation_fig:
+                st.plotly_chart(allocation_fig, use_container_width=True)
+            
+            # Additional charts - Full width layout
+            st.subheader("📊 Performance Analysis Charts")
+            
+            # Summary chart - Full width
+            summary_fig = create_team_allocation_summary_chart(team_allocation_data)
+            if summary_fig:
+                st.plotly_chart(summary_fig, use_container_width=True)
+            
+            # Client distribution and efficiency charts side by side
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Client distribution chart
+                distribution_fig = create_client_hours_distribution(team_allocation_data)
+                if distribution_fig:
+                    st.plotly_chart(distribution_fig, use_container_width=True)
+            
+            with col2:
+                # Efficiency distribution chart
+                efficiency_fig = create_efficiency_distribution_chart(team_allocation_data)
+                if efficiency_fig:
+                    st.plotly_chart(efficiency_fig, use_container_width=True)
+            
+            # Additional analysis charts - Full width
+            st.subheader("📈 Advanced Analytics")
+            
+            # Hours vs Days analysis - Full width
+            hours_days_fig = create_hours_vs_days_chart(team_allocation_data)
+            if hours_days_fig:
+                st.plotly_chart(hours_days_fig, use_container_width=True)
+            
+            # Performance insights and metrics in columns
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.subheader("🎯 Performance Insights")
+                
+                # Top performers
+                top_performers = team_allocation_data.nlargest(3, 'Efficiency_Score')
+                st.write("**Top Performers:**")
+                for _, row in top_performers.iterrows():
+                    st.write(f"• **{row['Client']}**: {row['Efficiency_Score']:.1f}% efficiency ({row['Total_Hours']:.0f} hours)")
+                
+                # Areas for improvement
+                low_performers = team_allocation_data[team_allocation_data['Status'] == 'Low Performance']
+                if not low_performers.empty:
+                    st.write("**Areas for Improvement:**")
+                    for _, row in low_performers.iterrows():
+                        st.write(f"• **{row['Client']}**: {row['Efficiency_Score']:.1f}% efficiency - needs attention")
+            
+            with col2:
+                st.subheader("📊 Resource Distribution")
+                
+                # Hours distribution
+                total_hours = team_allocation_data['Total_Hours'].sum()
+                high_perf_hours = team_allocation_data[team_allocation_data['Status'] == 'High Performance']['Total_Hours'].sum()
+                high_perf_pct = (high_perf_hours / total_hours * 100) if total_hours > 0 else 0
+                
+                st.metric("High Performance Hours", f"{high_perf_hours:,.0f} ({high_perf_pct:.1f}%)")
+                
+                # Average metrics
+                avg_hours_per_client = team_allocation_data['Total_Hours'].mean()
+                avg_days_per_client = team_allocation_data['Days_Worked'].mean()
+                
+                st.metric("Avg Hours per Client", f"{avg_hours_per_client:.1f}")
+                st.metric("Avg Days per Client", f"{avg_days_per_client:.0f}")
+            
+            with col3:
+                st.subheader("📈 Efficiency Metrics")
+                
+                # Efficiency statistics
+                avg_efficiency = team_allocation_data['Efficiency_Score'].mean()
+                max_efficiency = team_allocation_data['Efficiency_Score'].max()
+                min_efficiency = team_allocation_data['Efficiency_Score'].min()
+                
+                st.metric("Average Efficiency", f"{avg_efficiency:.1f}%")
+                st.metric("Max Efficiency", f"{max_efficiency:.1f}%")
+                st.metric("Min Efficiency", f"{min_efficiency:.1f}%")
+                
+                # Performance breakdown
+                status_counts = team_allocation_data['Status'].value_counts()
+                st.write("**Performance Breakdown:**")
+                for status, count in status_counts.items():
+                    pct = (count / len(team_allocation_data)) * 100
+                    st.write(f"• {status}: {count} ({pct:.1f}%)")
+            
+            # Data table with full width and better formatting
+            st.subheader("📋 Complete Team Allocation Data")
+            
+            # Format the dataframe for better display
+            display_df = team_allocation_data.copy()
+            display_df = display_df.sort_values('Efficiency_Score', ascending=False)
+            
+            # Round numeric columns for better display
+            numeric_columns = ['Total_Hours', 'Avg_Hours_Per_Day', 'Efficiency_Score']
+            for col in numeric_columns:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].round(2)
+            
+            # Add color coding for status
+            def highlight_status(row):
+                colors = {
+                    'High Performance': 'background-color: #d4edda; color: #155724;',
+                    'Good Performance': 'background-color: #d1ecf1; color: #0c5460;',
+                    'Average Performance': 'background-color: #fff3cd; color: #856404;',
+                    'Low Performance': 'background-color: #f8d7da; color: #721c24;'
+                }
+                return [colors.get(row['Status'], '')] * len(row)
+            
+            # Apply styling
+            styled_df = display_df.style.apply(highlight_status, axis=1)
+            
+            # Configure column formatting
+            styled_df = styled_df.format({
+                'Total_Hours': '{:,.1f}',
+                'Avg_Hours_Per_Day': '{:.2f}',
+                'Efficiency_Score': '{:.1f}%',
+                'Days_Worked': '{:.0f}'
+            })
+            
+            # Display the styled dataframe with selection
+            selected_indices = st.dataframe(
+                styled_df,
+                use_container_width=True,
+                height=400,
+                on_select="rerun",
+                selection_mode="single-row"
+            )
+            
+            # Handle row selection for detailed timesheet view
+            if selected_indices.selection.rows:
+                selected_row_idx = selected_indices.selection.rows[0]
+                selected_row = display_df.iloc[selected_row_idx]
+                
+                # Display detailed timesheet data
+                st.markdown("---")
+                st.subheader(f"📊 User Details for {selected_row['Client']}")
+                
+                # Get detailed user data
+                api_handler = get_api_handler()
+                user_data = api_handler.fetch_client_user_data(
+                    jobcode_id=selected_row['Jobcode_ID'],
+                    user_id=selected_row['User_ID'],
+                    period="daily",
+                    page=1,
+                    limit=10
+                )
+                
+                if user_data and user_data.get('data'):
+                    # Display summary metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Users", user_data.get('total', 0))
+                    
+                    with col2:
+                        total_duration = sum(entry.get('total_duration', 0) for entry in user_data['data'])
+                        st.metric("Total Duration", f"{total_duration:.1f} hours")
+                    
+                    with col3:
+                        avg_duration = total_duration / len(user_data['data']) if user_data['data'] else 0
+                        st.metric("Avg Duration/User", f"{avg_duration:.1f} hours")
+                    
+                    with col4:
+                        total_days = sum(entry.get('days_worked', 0) for entry in user_data['data'])
+                        st.metric("Total Days Worked", f"{total_days:.0f} days")
+                    
+                    # Display user details table
+                    users_df = pd.DataFrame(user_data['data'])
+                    
+                    # Format the user data
+                    if not users_df.empty:
+                        # Calculate additional metrics
+                        users_df['avg_hours_per_day'] = users_df['total_duration'] / users_df['days_worked'].replace(0, 1)
+                        users_df['efficiency_score'] = (users_df['avg_hours_per_day'] / 8 * 100).clip(0, 100)
+                        
+                        # Format dates
+                        users_df['start_date'] = pd.to_datetime(users_df['start_date']).dt.strftime('%Y-%m-%d')
+                        users_df['end_date'] = pd.to_datetime(users_df['end_date']).dt.strftime('%Y-%m-%d')
+                        
+                        # Select and rename columns for display
+                        display_columns = ['username', 'user_id', 'total_duration', 'days_worked', 'avg_hours_per_day', 'efficiency_score', 'start_date', 'end_date']
+                        users_display = users_df[display_columns].copy()
+                        users_display.columns = ['Username', 'User ID', 'Total Hours', 'Days Worked', 'Avg Hours/Day', 'Efficiency %', 'Start Date', 'End Date']
+                        
+                        # Round numeric columns
+                        numeric_cols = ['Total Hours', 'Avg Hours/Day', 'Efficiency %']
+                        for col in numeric_cols:
+                            users_display[col] = users_display[col].round(2)
+                        
+                        # Add efficiency status
+                        def get_efficiency_status(efficiency):
+                            if efficiency >= 80:
+                                return "High Performance"
+                            elif efficiency >= 60:
+                                return "Good Performance"
+                            elif efficiency >= 40:
+                                return "Average Performance"
+                            else:
+                                return "Low Performance"
+                        
+                        users_display['Status'] = users_display['Efficiency %'].apply(get_efficiency_status)
+                        
+                        # Add color coding for efficiency status
+                        def highlight_user_status(row):
+                            colors = {
+                                'High Performance': 'background-color: #d4edda; color: #155724;',
+                                'Good Performance': 'background-color: #d1ecf1; color: #0c5460;',
+                                'Average Performance': 'background-color: #fff3cd; color: #856404;',
+                                'Low Performance': 'background-color: #f8d7da; color: #721c24;'
+                            }
+                            return [colors.get(row['Status'], '')] * len(row)
+                        
+                        styled_users = users_display.style.apply(highlight_user_status, axis=1)
+                        styled_users = styled_users.format({
+                            'Total Hours': '{:.1f}',
+                            'Avg Hours/Day': '{:.2f}',
+                            'Efficiency %': '{:.1f}%'
+                        })
+                        
+                        # Make the dataframe selectable for username clicks
+                        selected_user_indices = st.dataframe(
+                            styled_users,
+                            use_container_width=True,
+                            height=300,
+                            on_select="rerun",
+                            selection_mode="single-row"
+                        )
+                        
+                        # Handle username selection for detailed daily data
+                        if selected_user_indices.selection.rows:
+                            selected_user_idx = selected_user_indices.selection.rows[0]
+                            selected_user = users_display.iloc[selected_user_idx]
+                            
+                            # Display detailed daily timesheet data
+                            st.markdown("---")
+                            st.subheader(f"📅 Daily Timesheet for {selected_user['Username']} - {selected_row['Client']}")
+                            
+                            # Get detailed daily data for the selected user
+                            daily_data = api_handler.fetch_user_daily_data(
+                                jobcode_id=selected_row['Jobcode_ID'],
+                                user_id=selected_user['User ID'],
+                                period="daily",
+                                page=1,
+                                limit=10
+                            )
+                            
+                            if daily_data and daily_data.get('data'):
+                                # Display daily summary metrics
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    st.metric("Total Entries", daily_data.get('total', 0))
+                                
+                                with col2:
+                                    total_duration = sum(entry.get('duration', 0) for entry in daily_data['data'])
+                                    st.metric("Total Duration", f"{total_duration:.1f} hours")
+                                
+                                with col3:
+                                    approved_count = len([entry for entry in daily_data['data'] if entry.get('status') == 'approved'])
+                                    st.metric("Approved Entries", approved_count)
+                                
+                                with col4:
+                                    pending_count = len([entry for entry in daily_data['data'] if entry.get('status') == 'pending'])
+                                    st.metric("Pending Entries", pending_count)
+                                
+                                # Display detailed daily timesheet table
+                                daily_df = pd.DataFrame(daily_data['data'])
+                                
+                                # Format the daily data
+                                if not daily_df.empty:
+                                    daily_df['date'] = pd.to_datetime(daily_df['date']).dt.strftime('%Y-%m-%d')
+                                    daily_display = daily_df[['date', 'start_time', 'end_time', 'duration', 'description', 'status']].copy()
+                                    daily_display.columns = ['Date', 'Start Time', 'End Time', 'Duration (hrs)', 'Description', 'Status']
+                                    
+                                    # Add status color coding
+                                    def highlight_daily_status(row):
+                                        if row['Status'] == 'approved':
+                                            return ['background-color: #d4edda; color: #155724;'] * len(row)
+                                        elif row['Status'] == 'pending':
+                                            return ['background-color: #fff3cd; color: #856404;'] * len(row)
+                                        else:
+                                            return ['background-color: #f8d7da; color: #721c24;'] * len(row)
+                                    
+                                    styled_daily = daily_display.style.apply(highlight_daily_status, axis=1)
+                                    styled_daily = styled_daily.format({'Duration (hrs)': '{:.1f}'})
+                                    
+                                    st.dataframe(
+                                        styled_daily,
+                                        use_container_width=True,
+                                        height=300
+                                    )
+                                    
+                                    # Display API call info
+                                    st.info(f"📡 **API Call**: `GET /api/v1/client-user-data/{selected_row['Jobcode_ID']}?period=daily&limit=10&page=1&user_id={selected_user['User ID']}`")
+                                    
+                                    # Show pagination info
+                                    if daily_data.get('total_pages', 0) > 1:
+                                        st.write(f"📄 **Pagination**: Page {daily_data.get('page', 1)} of {daily_data.get('total_pages', 1)} (Total: {daily_data.get('total', 0)} entries)")
+                            else:
+                                st.warning("No daily timesheet data available for this user.")
+                        
+                        # Display API call info
+                        st.info(f"📡 **API Call**: `GET /api/v1/client-user-data/{selected_row['Jobcode_ID']}?period=daily&limit=10&page=1`")
+                        
+                        # Show pagination info
+                        if user_data.get('total_pages', 0) > 1:
+                            st.write(f"📄 **Pagination**: Page {user_data.get('page', 1)} of {user_data.get('total_pages', 1)} (Total: {user_data.get('total', 0)} users)")
+                        
+                        # Additional insights
+                        st.subheader("📈 User Performance Insights")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Top Performers by Hours:**")
+                            top_users = users_display.nlargest(3, 'Total Hours')
+                            for _, row in top_users.iterrows():
+                                st.write(f"• **{row['Username']}**: {row['Total Hours']:.1f} hours ({row['Status']})")
+                        
+                        with col2:
+                            st.write("**Most Efficient Users:**")
+                            efficient_users = users_display.nlargest(3, 'Efficiency %')
+                            for _, row in efficient_users.iterrows():
+                                st.write(f"• **{row['Username']}**: {row['Efficiency %']:.1f}% efficiency")
+                else:
+                    st.warning("No user data available for this selection.")
+            
+            # Add summary statistics below the table
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Clients", len(display_df))
+            
+            with col2:
+                st.metric("Total Hours", f"{display_df['Total_Hours'].sum():,.0f}")
+            
+            with col3:
+                st.metric("Avg Efficiency", f"{display_df['Efficiency_Score'].mean():.1f}%")
+            
+            with col4:
+                high_perf_count = len(display_df[display_df['Status'] == 'High Performance'])
+                st.metric("High Performers", f"{high_perf_count}/{len(display_df)}")
+            
         else:
             st.info("💡 Team allocation data will be displayed when API data is available")
-        
-        # Team details
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("👥 Team Assignment")
-            if api_data and 'projects' in api_data:
-                projects = api_data['projects'][:3]  # Show top 3
-                for i, project in enumerate(projects):
-                    team_size = [4, 6, 3][i]
-                    lead = ['Alice Johnson', 'Bob Smith', 'Carol Davis'][i]
-                    st.write(f"**{project}**: {team_size} people, led by {lead}")
-            else:
+            
+            # Fallback display
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("👥 Team Assignment")
                 st.info("Team assignment data will be shown when available")
-        
-        with col2:
-            st.subheader("⚡ Resource Utilization")
-            if api_data and 'projects' in api_data:
-                total_people = 13  # Sum of team sizes
-                total_hours = 2840  # Sample total hours
-                avg_hours_per_person = total_hours / total_people
-                
-                st.metric("Total Team Members", total_people)
-                st.metric("Total Project Hours", f"{total_hours:,.0f}")
-                st.metric("Avg Hours/Person", f"{avg_hours_per_person:.1f}")
-            else:
+            
+            with col2:
+                st.subheader("⚡ Resource Utilization")
                 st.info("Resource utilization data will be shown when available")
-        
-        # Sample team allocation table
-        if api_data and 'projects' in api_data:
-            st.subheader("Team Allocation Details")
-            import pandas as pd
-            
-            sample_team_data = {
-                'Project': api_data['projects'][:3],
-                'Team Size': [4, 6, 3],
-                'Lead': ['Alice Johnson', 'Bob Smith', 'Carol Davis'],
-                'Total Hours': [1200, 1040, 600],
-                'Status': ['Active', 'Active', 'Planning']
-            }
-            
-            team_df = pd.DataFrame(sample_team_data)
-            st.dataframe(team_df, use_container_width=True)
-        else:
-            st.info("Detailed team allocation will be shown when project data is available")
     
     # Alerts section
     if alerts_data:
