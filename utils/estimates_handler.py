@@ -24,8 +24,8 @@ class EstimatesHandler:
             supabase_url (str): Supabase project URL
             supabase_key (str): Supabase API key
         """
-        self.supabase_url = supabase_url or "https://your-project.supabase.co"
-        self.supabase_key = supabase_key or "your-supabase-anon-key"
+        self.supabase_url = supabase_url or "https://tgendmgdrljuxxxyynpz.supabase.co"
+        self.supabase_key = supabase_key or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
         
         # Initialize Supabase client (demo mode for now)
         try:
