@@ -340,38 +340,41 @@ class TimesheetAPIHandler:
             dict: API response with client time summary data
         """
         try:
-            # Mock API response based on the provided structure
-            mock_response = {
-                "total": 512,
+            # Make actual API call to the real endpoint
+            api_url = "http://16.171.230.164/api/v1/client-time-summary"
+            params = {
+                "page": page,
+                "limit": limit
+            }
+            
+            response = requests.get(
+                api_url,
+                params=params,
+                timeout=30  # 30 second timeout
+            )
+            response.raise_for_status()
+            
+            # Parse the response
+            data = response.json()
+            
+            # Add pagination info if not present
+            if 'total_pages' not in data:
+                total = data.get('total', 0)
+                data['total_pages'] = (total + limit - 1) // limit if total > 0 else 0
+            
+            return data
+            
+        except requests.exceptions.RequestException as e:
+            print(f"API request error: {e}")
+            # Return fallback data structure
+            return {
+                "total": 0,
                 "limit": limit,
                 "offset": (page - 1) * limit,
                 "page": page - 1,
-                "total_pages": 52,
-                "data": [
-                    {"name": "test", "jobcode_id": 0, "total_duration": 684.53, "start_date": "", "end_date": "2024-12-23T14:34:00-05:00", "days_worked": 115},
-                    {"name": "Vacation", "jobcode_id": 6777741, "total_duration": 48.0, "start_date": "", "end_date": "", "days_worked": 0},
-                    {"name": "Lunch Break", "jobcode_id": 7311133, "total_duration": 29174.8, "start_date": "2020-01-02T09:31:00-05:00", "end_date": "2025-07-16 14:57:00+00", "days_worked": 1440},
-                    {"name": "Barrie Esprit", "jobcode_id": 8463050, "total_duration": 24.45, "start_date": "2020-01-03T07:01:00-05:00", "end_date": "2020-02-24T16:20:00-05:00", "days_worked": 4},
-                    {"name": "COVENTRY CONSTRUCTION", "jobcode_id": 8463110, "total_duration": 6.7, "start_date": "2020-01-24T09:59:00-05:00", "end_date": "2020-01-24T17:11:00-05:00", "days_worked": 1},
-                    {"name": "hillman", "jobcode_id": 8463136, "total_duration": 86.67, "start_date": "2020-01-02T07:27:00-05:00", "end_date": "2020-06-19T11:27:00-04:00", "days_worked": 34},
-                    {"name": "magellan", "jobcode_id": 8463162, "total_duration": None, "start_date": "2020-02-18T06:59:00-05:00", "end_date": "2020-06-30T12:28:00-04:00", "days_worked": 4},
-                    {"name": "Office", "jobcode_id": 8571404, "total_duration": 15170.8, "start_date": "", "end_date": "2022-09-08T17:18:00-04:00", "days_worked": 687},
-                    {"name": "Gordon Foods", "jobcode_id": 11817846, "total_duration": 2541.22, "start_date": "2020-01-02T05:02:00-05:00", "end_date": "2020-09-18T10:04:00-04:00", "days_worked": 110},
-                    {"name": "Westbridge", "jobcode_id": 18177156, "total_duration": 35.75, "start_date": "2020-01-15T05:49:00-05:00", "end_date": "2020-01-17T11:57:00-05:00", "days_worked": 3}
-                ]
+                "total_pages": 0,
+                "data": []
             }
-            
-            # In production, this would be:
-            # response = requests.get(
-            #     f"{self.api_base_url}/api/v1/client-time-summary",
-            #     headers=self.headers,
-            #     params={"page": page, "limit": limit}
-            # )
-            # response.raise_for_status()
-            # return response.json()
-            
-            return mock_response
-            
         except Exception as e:
             print(f"Error fetching client time summary: {e}")
             return {"total": 0, "data": []}

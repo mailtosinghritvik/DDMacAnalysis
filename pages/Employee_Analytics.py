@@ -326,7 +326,6 @@ def fetch_user_summary_data(user_id, period='daily', page=1, limit=1000):
                 
                 if page_records:  # If we got data
                     all_data.extend(page_records)
-                    st.write(f"📄 Loaded {period} page {current_page}: {len(page_records)} records")
                 
                 # Update pagination info
                 pagination = page_data.get("pagination", {})
@@ -504,7 +503,7 @@ def main():
                         "sort_field": "username", 
                         "sort_order": "asc"
                     },
-                    timeout=10
+                    timeout=50
                 )
                 
                 if response.status_code == 200:
@@ -719,7 +718,6 @@ def main():
                         
                         if page_employees:  # If we got data
                             all_employees.extend(page_employees)
-                            st.write(f"📄 Loaded page {page}: {len(page_employees)} employees")
                         
                         # Update pagination info
                         pagination = page_data.get("pagination", {})
@@ -742,9 +740,7 @@ def main():
                     }
                     employee_names = [emp["username"] for emp in all_employees]
                     employee_user_ids = {emp["username"]: emp.get("user_id", 503759) for emp in all_employees}
-                    st.success(f"✅ Successfully loaded {len(all_employees)} employees from {page-1} pages")
                 else:
-                    st.warning("⚠️ No employee data found in API. Using demo data for demonstration.")
                     employee_names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
                     # Create mock employee data structure with user_ids
                     demo_user_ids = [503759, 503760, 503761, 503762, 503763]
