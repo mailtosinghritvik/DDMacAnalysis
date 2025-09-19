@@ -11,13 +11,12 @@ def fetch_task_hours_data(limit=100, offset=0, jobcode_id=None):
     """Fetch task hours data from API"""
     try:
         # Fetch task estimate list data
-        api_url = f"http://localhost:8001/api/v1/task-estmate-list?limit={limit}&offset={offset}"
+        api_url = f"http://16.171.230.164/api/v1/task-estmate-list?limit={limit}&offset={offset}"
         if jobcode_id:
             api_url += f"&jobcode_id={jobcode_id}"
         
         headers = {'accept': 'application/json'}
         
-        st.info(f"Fetching data from: {api_url}")
         response = requests.get(api_url, headers=headers, timeout=30)
         
         if response.status_code == 200:
@@ -25,24 +24,35 @@ def fetch_task_hours_data(limit=100, offset=0, jobcode_id=None):
             
             if data and data.get('data'):
                 df = pd.DataFrame(data['data'])
-                # Debug: Show available columns
-                st.info(f"Available columns: {list(df.columns)}")
-                st.info(f"Total records fetched: {len(df)}")
                 return df
             else:
-                st.warning("No data found in API response")
                 return pd.DataFrame()
         else:
-            st.error(f"API request failed with status code: {response.status_code}")
-            st.error(f"Response: {response.text}")
             return pd.DataFrame()
             
     except requests.exceptions.ConnectionError:
-        st.error("Connection failed. Please check if the API server is running on localhost:8001")
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
         return pd.DataFrame()
+
+def fetch_available_jobcodes(limit=1000):
+    """Fetch available job codes for dropdown"""
+    try:
+        api_url = f"http://16.171.230.164/api/v1/task-estmate-list?limit={limit}&offset=0"
+        headers = {'accept': 'application/json'}
+        
+        response = requests.get(api_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and data.get('data'):
+                df = pd.DataFrame(data['data'])
+                # Extract unique job codes if available
+                if 'jobcode_id' in df.columns:
+                    return df['jobcode_id'].unique().tolist()
+        return []
+    except:
+        return []
 
 def create_planned_vs_actual_chart(df):
     """Create planned vs actual hours chart"""
@@ -308,32 +318,37 @@ def main():
     st.title("⏱️ Task Hours Analytics")
     st.markdown("Analyze planned vs actual task hours across projects and task types")
     
-    # API Configuration
-    st.sidebar.subheader("🔧 API Configuration")
-    limit = st.sidebar.number_input("Records Limit", min_value=10, max_value=1000, value=100, step=10)
-    offset = st.sidebar.number_input("Offset", min_value=0, value=0, step=10)
+    # Controls Section
+    st.subheader("🔧 Controls & Filters")
     
-    # Job Code Filter
-    st.sidebar.subheader("🎯 Filters")
-    jobcode_id = st.sidebar.text_input("Job Code ID (optional)", placeholder="e.g., 28514829")
-    if jobcode_id:
-        try:
-            jobcode_id = int(jobcode_id)
-        except ValueError:
-            st.sidebar.error("Please enter a valid Job Code ID (numeric)")
+    # Create columns for controls
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        limit = st.number_input("Records Limit", min_value=10, max_value=1000, value=100, step=10)
+    
+    with col2:
+        offset = st.number_input("Offset", min_value=0, value=0, step=10)
+    
+    with col3:
+        # Fetch available job codes for dropdown
+        available_jobcodes = fetch_available_jobcodes()
+        if available_jobcodes:
+            jobcode_options = ["All Projects"] + [str(jc) for jc in available_jobcodes]
+            selected_jobcode = st.selectbox("Select Job Code", jobcode_options)
+            jobcode_id = None if selected_jobcode == "All Projects" else int(selected_jobcode)
+        else:
+            st.selectbox("Select Job Code", ["No data available"], disabled=True)
             jobcode_id = None
-    else:
-        jobcode_id = None
     
-    # Refresh button
-    if st.sidebar.button("🔄 Refresh Data", key="refresh_task_hours"):
-        st.rerun()
+    with col4:
+        st.write("")  # Empty space for alignment
+        if st.button("🔄 Refresh Data", key="refresh_task_hours"):
+            st.rerun()
     
     # API Status
-    st.sidebar.subheader("📡 API Status")
-    st.sidebar.info("API Endpoint: localhost:8001")
-    if jobcode_id:
-        st.sidebar.info(f"Filtering by Job Code: {jobcode_id}")
+    st.info(f"📡 **API Endpoint**: http://16.171.230.164/| **Records**: {limit} | **Offset**: {offset}" + 
+            (f" | **Job Code**: {jobcode_id}" if jobcode_id else " | **Job Code**: All"))
     
     # Fetch data
     with st.spinner("Loading task hours data..."):
