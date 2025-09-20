@@ -15,8 +15,8 @@ except ImportError:
     st.error("❌ Supabase not installed. Run: pip install supabase")
 
 # Supabase configuration (replace with your actual values)
-SUPABASE_URL = "YOUR_SUPABASE_URL_HERE"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY_HERE"
+SUPABASE_URL = "https://tgendmgdrljuxxxyynpz.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
 
 # Initialize Supabase client
 if SUPABASE_AVAILABLE and SUPABASE_URL != "YOUR_SUPABASE_URL_HERE":

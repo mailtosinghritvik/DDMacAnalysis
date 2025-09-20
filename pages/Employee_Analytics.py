@@ -492,7 +492,7 @@ def main():
         with st.spinner("Loading employee data for KPIs..."):
             all_employees = []
             page = 1
-            limit = 50
+            limit = 20
             
             while True:
                 response = requests.get(
@@ -539,10 +539,9 @@ def main():
     display_employee_kpis(employee_kpi_data, estimates_data)
     
     # Main Analytics Tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab4 = st.tabs([
         "🎯 Performance Overview",
-        "📈 Productivity Analysis", 
-        "⏱️ Time Utilization",
+      
         "👤 Individual Insights"
     ])
     
@@ -589,101 +588,7 @@ def main():
             styled_df = util_df.style.applymap(style_performance, subset=['Performance'])
             st.dataframe(styled_df, use_container_width=True)
     
-    with tab2:
-        st.subheader("Productivity Analysis")
-        
-        # Individual productivity gauges
-        col1, col2, col3 = st.columns(3)
-        
-        employees = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
-        productivity_scores = [92, 88, 95, 78, 91]
-        
-        for i, (emp, score) in enumerate(zip(employees[:3], productivity_scores[:3])):
-            with [col1, col2, col3][i]:
-                gauge_fig = create_employee_productivity_gauge(score, emp)
-                st.plotly_chart(gauge_fig, use_container_width=True)
-        
-        # Productivity trends
-        st.subheader("Productivity Trends")
-        timeline_fig = create_employee_progress_timeline(api_data)
-        if timeline_fig:
-            st.plotly_chart(timeline_fig, use_container_width=True)
-        
-        # Productivity insights
-        st.subheader("📊 Productivity Insights")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("""
-            **🏆 Top Performers:**
-            - Carol Davis: 95% productivity
-            - Alice Johnson: 92% productivity
-            - Emma Brown: 91% productivity
-            """)
-        
-        with col2:
-            st.markdown("""
-            **📈 Improvement Areas:**
-            - David Wilson: Focus on time management
-            - Bob Smith: Reduce context switching
-            - Team: Optimize meeting efficiency
-            """)
     
-    with tab3:
-        st.subheader("Time Utilization Analysis")
-        
-        if progress_data and estimates_data:
-            # Progress vs estimates comparison
-            st.subheader("Actual vs Estimated Hours")
-            
-            progress_comparison = []
-            for p in progress_data:
-                progress_comparison.append({
-                    'Project': p['project_name'],
-                    'Estimated Hours': p['estimated_hours'],
-                    'Actual Hours': p['actual_hours'],
-                    'Variance': p['actual_hours'] - p['estimated_hours'],
-                    'Variance %': ((p['actual_hours'] - p['estimated_hours']) / p['estimated_hours'] * 100) if p['estimated_hours'] > 0 else 0
-                })
-            
-            progress_df = pd.DataFrame(progress_comparison)
-            
-            # Variance chart
-            fig = px.bar(
-                progress_df,
-                x='Project',
-                y='Variance',
-                color='Variance',
-                color_continuous_scale='RdYlGn_r',
-                title='Project Hours Variance (Actual - Estimated)',
-                labels={'Variance': 'Hours Variance'}
-            )
-            fig.update_layout(height=400, xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Detailed variance table
-            st.dataframe(progress_df, use_container_width=True)
-        else:
-            st.info("💡 Upload estimates to enable time utilization comparison")
-        
-        # Time distribution analysis
-        st.subheader("Time Distribution by Category")
-        
-        # Mock time category data
-        time_categories = {
-            'Development': 65,
-            'Meetings': 15,
-            'Planning': 10,
-            'Documentation': 5,
-            'Other': 5
-        }
-        
-        fig = px.pie(
-            values=list(time_categories.values()),
-            names=list(time_categories.keys()),
-            title='Team Time Distribution (%)'
-        )
-        st.plotly_chart(fig, use_container_width=True)
     
     with tab4:
         st.subheader("Individual Employee Insights")
@@ -699,7 +604,7 @@ def main():
             limit = 50  # Fetch 50 employees per page
             total_pages = 1
             
-            with st.spinner("Loading all employee data..."):
+            with st.spinner("Loading employee data..."):
                 while page <= total_pages:
                     response = requests.get(
                         "http://16.171.230.164/api/user-listing-data",
