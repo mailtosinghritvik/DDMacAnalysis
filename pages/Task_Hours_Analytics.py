@@ -36,7 +36,7 @@ def fetch_task_hours_data(limit=100, offset=0, jobcode_id=None):
         return pd.DataFrame()
 
 def fetch_available_jobcodes(limit=1000):
-    """Fetch available job codes for dropdown"""
+    """Fetch available job codes with names for dropdown"""
     try:
         api_url = f"http://16.171.230.164/api/v1/task-estmate-list?limit={limit}&offset=0"
         headers = {'accept': 'application/json'}
@@ -47,9 +47,16 @@ def fetch_available_jobcodes(limit=1000):
             data = response.json()
             if data and data.get('data'):
                 df = pd.DataFrame(data['data'])
-                # Extract unique job codes if available
-                if 'jobcode_id' in df.columns:
-                    return df['jobcode_id'].unique().tolist()
+                # Extract unique job codes with names if available
+                if 'jobcode_id' in df.columns and 'jobcode_name' in df.columns:
+                    # Get unique combinations of jobcode_id and jobcode_name
+                    unique_jobcodes = df[['jobcode_id', 'jobcode_name']].drop_duplicates()
+                    # Return list of tuples (jobcode_id, jobcode_name)
+                    return [(row['jobcode_id'], row['jobcode_name']) for _, row in unique_jobcodes.iterrows()]
+                elif 'jobcode_id' in df.columns:
+                    # Fallback to just jobcode_id if jobcode_name not available
+                    unique_ids = df['jobcode_id'].unique()
+                    return [(jobcode_id, f"Job Code {jobcode_id}") for jobcode_id in unique_ids]
         return []
     except:
         return []
@@ -334,9 +341,14 @@ def main():
         # Fetch available job codes for dropdown
         available_jobcodes = fetch_available_jobcodes()
         if available_jobcodes:
-            jobcode_options = ["All Projects"] + [str(jc) for jc in available_jobcodes]
+            # Create options with job code names
+            jobcode_options = ["All Projects"] + [f"{name} (ID: {jc_id})" for jc_id, name in available_jobcodes]
             selected_jobcode = st.selectbox("Select Job Code", jobcode_options)
-            jobcode_id = None if selected_jobcode == "All Projects" else int(selected_jobcode)
+            if selected_jobcode == "All Projects":
+                jobcode_id = None
+            else:
+                # Extract jobcode_id from the selected option
+                jobcode_id = int(selected_jobcode.split("(ID: ")[1].split(")")[0])
         else:
             st.selectbox("Select Job Code", ["No data available"], disabled=True)
             jobcode_id = None
