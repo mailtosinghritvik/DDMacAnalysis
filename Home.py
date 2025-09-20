@@ -579,7 +579,7 @@ def main():
         st.markdown("---")
         st.subheader("🚀 Quick Navigation")
         
-        nav_col1, nav_col2 = st.columns(2)
+        nav_col1, nav_col2, nav_col3 = st.columns(3)
         
         with nav_col1:
             if st.button("📊 Dashboard Analytics", use_container_width=True):
@@ -594,6 +594,10 @@ def main():
             
             if st.button("📋 AccuBid Estimates", use_container_width=True):
                 st.switch_page("pages/Excel_Ingestion.py")
+        
+        with nav_col3:
+            if st.button("📧 Email Report Writer", use_container_width=True):
+                st.switch_page("pages/EmailReportWriter.py")
         
         # 7. Footer with system info
         st.markdown("---")
