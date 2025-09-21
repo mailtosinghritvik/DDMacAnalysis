@@ -167,8 +167,8 @@ class EstimatesHandler:
                     if isinstance(value, datetime):
                         record[key] = value.isoformat()
             
-            # Insert into Supabase
-            result = self.supabase.table('project_estimates').insert(records).execute()
+            # Insert into Supabase (using accubid_breakdowns table)
+            result = self.supabase.table('accubid_breakdowns').insert(records).execute()
             print(f"Saved {len(records)} estimates to Supabase")
             
         except Exception as e:
@@ -186,7 +186,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").eq('client', client_name).execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").eq('client_name', client_name).execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")
@@ -206,7 +206,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").eq('project', project_name).execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").eq('job_name', project_name).execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")
@@ -223,7 +223,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")

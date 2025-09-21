@@ -50,3 +50,20 @@ pytz==2024.2
 
 # Memory optimization
 psutil==6.1.0
+
+# Report generation and export
+fpdf2==2.8.0
+python-docx==1.1.2
+beautifulsoup4==4.12.3
+
+# Email functionality
+secure-smtplib==0.1.1
+
+# HTML processing
+html2text==2024.2.26
+
+# Image processing (for PDFs)
+Pillow==10.4.0
+
+# Text processing
+unicodedata2==15.1.0
