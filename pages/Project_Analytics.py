@@ -97,7 +97,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def fetch_client_time_summary_direct(page=1, limit=50):
+def fetch_client_time_summary_direct(page=1, limit=1000):
     """Make direct API call to fetch client time summary data"""
     try:
         api_url = "http://16.171.230.164/api/v1/client-time-summary"
@@ -673,444 +673,12 @@ def main():
     display_project_kpis(api_data, estimates_data, progress_data)
     
     # Main Analytics Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 Progress Tracking",
-        "💰 Budget Analysis", 
-        "⚠️ Risk Assessment",
-        "👥 Team Allocation",
+    tab5, tab6 = st.tabs([
+     
         "📊 API Data View",
         "🔍 Project & Client Explorer"
     ])
     
-    with tab1:
-        st.subheader("Project Progress Tracking")
-        
-        if progress_data:
-            # Progress timeline chart
-            progress_timeline_fig = create_project_progress_timeline(progress_data)
-            if progress_timeline_fig:
-                st.plotly_chart(progress_timeline_fig, use_container_width=True)
-            
-            # Progress details
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🎯 Progress Summary")
-                for p in progress_data:
-                    progress_pct = (p['actual_hours'] / p['estimated_hours'] * 100) if p['estimated_hours'] > 0 else 0
-                    status_icon = "🟢" if progress_pct <= 100 else "🟡" if progress_pct <= 110 else "🔴"
-                    st.write(f"{status_icon} **{p['project_name']}**: {progress_pct:.1f}% complete")
-            
-            with col2:
-                st.subheader("⏱️ Hours Comparison")
-                progress_df = pd.DataFrame([
-                    {
-                        'Project': p['project_name'],
-                        'Estimated': p['estimated_hours'],
-                        'Actual': p['actual_hours'],
-                        'Variance': p['actual_hours'] - p['estimated_hours']
-                    } for p in progress_data
-                ])
-                st.dataframe(progress_df, use_container_width=True)
-        else:
-            st.info("💡 Upload project estimates to enable progress tracking")
-    
-    with tab2:
-        st.subheader("Budget Analysis & Financial Tracking")
-        
-        if progress_data:
-            # Budget analysis chart
-            budget_fig, budget_df = create_project_budget_analysis(progress_data)
-            if budget_fig:
-                st.plotly_chart(budget_fig, use_container_width=True)
-            
-            # Budget summary
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("💰 Budget Status")
-                if budget_df is not None:
-                    for _, row in budget_df.iterrows():
-                        status_color = "🟢" if row['Status'] == 'On Track' else "🟡" if row['Status'] == 'Caution' else "🔴"
-                        st.write(f"{status_color} **{row['Project']}**: {row['Utilization %']:.1f}% utilized")
-            
-            with col2:
-                st.subheader("📊 Financial Metrics")
-                if budget_df is not None:
-                    total_budget = budget_df['Budget'].sum()
-                    total_spent = budget_df['Spent'].sum()
-                    st.metric("Total Budget", f"${total_budget:,.0f}")
-                    st.metric("Total Spent", f"${total_spent:,.0f}")
-                    st.metric("Remaining", f"${total_budget - total_spent:,.0f}")
-        else:
-            st.info("💡 Upload budget estimates to enable financial tracking")
-    
-    with tab3:
-        st.subheader("Risk Assessment & Management")
-        
-        if progress_data:
-            # Risk matrix
-            risk_fig, risk_df = create_project_risk_matrix(progress_data)
-            if risk_fig:
-                st.plotly_chart(risk_fig, use_container_width=True)
-            
-            # Risk insights
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🚨 High Risk Projects")
-                if risk_df is not None:
-                    high_risk = risk_df[risk_df['Overall Risk'] > 7]
-                    if not high_risk.empty:
-                        for _, row in high_risk.iterrows():
-                            st.error(f"**{row['Project']}**: Risk Score {row['Overall Risk']:.1f}/10")
-                    else:
-                        st.success("No high-risk projects identified")
-            
-            with col2:
-                st.subheader("💡 Risk Mitigation")
-                st.markdown("""
-                **Recommended Actions:**
-                - Monitor budget utilization weekly
-                - Implement scope change controls
-                - Increase team communication
-                - Review resource allocation
-                - Update estimates regularly
-                """)
-        else:
-            st.info("💡 Enable progress tracking to view risk assessment")
-    
-    with tab4:
-        st.subheader("Team Allocation & Resource Management")
-        
-        # Add refresh button for team allocation data
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write("**Team Performance Analytics**")
-        with col2:
-            if st.button("🔄 Refresh Team Data", type="secondary"):
-                st.rerun()
-        
-        # Get team allocation data from API - use direct API call for fresh data
-        team_allocation_data = None
-        if api_data and api_data.get('team_allocation') is not None:
-            team_allocation_data = api_data.get('team_allocation')
-        else:
-            # Fallback: make direct API call to get team allocation data
-            try:
-                with st.spinner("Fetching team allocation data..."):
-                    client_data = fetch_client_time_summary_direct(page=1, limit=50)
-                    team_allocation_data = analyze_team_allocation_direct(client_data)
-            except Exception as e:
-                st.warning(f"Could not fetch team allocation data: {str(e)}")
-        
-        if team_allocation_data is not None and not team_allocation_data.empty:
-            # Display KPIs for team allocation
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                total_hours = team_allocation_data['Total_Hours'].sum()
-                st.metric("Total Hours", f"{total_hours:,.0f}")
-            
-            with col2:
-                total_clients = len(team_allocation_data)
-                st.metric("Active Clients", total_clients)
-            
-            with col3:
-                avg_efficiency = team_allocation_data['Efficiency_Score'].mean()
-                st.metric("Avg Efficiency", f"{avg_efficiency:.1f}%")
-            
-            with col4:
-                high_performers = len(team_allocation_data[team_allocation_data['Status'] == 'High Performance'])
-                st.metric("High Performers", high_performers)
-            
-            # Main allocation chart
-            allocation_fig, allocation_df = create_project_team_allocation(team_allocation_data)
-            if allocation_fig:
-                st.plotly_chart(allocation_fig, use_container_width=True)
-            
-            # Additional charts - Full width layout
-            st.subheader("📊 Performance Analysis Charts")
-            
-            # Summary chart - Full width
-            summary_fig = create_team_allocation_summary_chart(team_allocation_data)
-            if summary_fig:
-                st.plotly_chart(summary_fig, use_container_width=True)
-            
-            # Client distribution and efficiency charts side by side
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Client distribution chart
-                distribution_fig = create_client_hours_distribution(team_allocation_data)
-                if distribution_fig:
-                    st.plotly_chart(distribution_fig, use_container_width=True)
-            
-            with col2:
-                # Efficiency distribution chart
-                efficiency_fig = create_efficiency_distribution_chart(team_allocation_data)
-                if efficiency_fig:
-                    st.plotly_chart(efficiency_fig, use_container_width=True)
-            
-            # Additional analysis charts - Full width
-            st.subheader("📈 Advanced Analytics")
-            
-            # Hours vs Days analysis - Full width
-            hours_days_fig = create_hours_vs_days_chart(team_allocation_data)
-            if hours_days_fig:
-                st.plotly_chart(hours_days_fig, use_container_width=True)
-            
-            # Performance insights and metrics in columns
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.subheader("🎯 Performance Insights")
-                
-                # Top performers
-                top_performers = team_allocation_data.nlargest(3, 'Efficiency_Score')
-                st.write("**Top Performers:**")
-                for _, row in top_performers.iterrows():
-                    st.write(f"• **{row['Client']}**: {row['Efficiency_Score']:.1f}% efficiency ({row['Total_Hours']:.0f} hours)")
-                
-                # Areas for improvement
-                low_performers = team_allocation_data[team_allocation_data['Status'] == 'Low Performance']
-                if not low_performers.empty:
-                    st.write("**Areas for Improvement:**")
-                    for _, row in low_performers.iterrows():
-                        st.write(f"• **{row['Client']}**: {row['Efficiency_Score']:.1f}% efficiency - needs attention")
-            
-            with col2:
-                st.subheader("📊 Resource Distribution")
-                
-                # Hours distribution
-                total_hours = team_allocation_data['Total_Hours'].sum()
-                high_perf_hours = team_allocation_data[team_allocation_data['Status'] == 'High Performance']['Total_Hours'].sum()
-                high_perf_pct = (high_perf_hours / total_hours * 100) if total_hours > 0 else 0
-                
-                st.metric("High Performance Hours", f"{high_perf_hours:,.0f} ({high_perf_pct:.1f}%)")
-                
-                # Average metrics
-                avg_hours_per_client = team_allocation_data['Total_Hours'].mean()
-                avg_days_per_client = team_allocation_data['Days_Worked'].mean()
-                
-                st.metric("Avg Hours per Client", f"{avg_hours_per_client:.1f}")
-                st.metric("Avg Days per Client", f"{avg_days_per_client:.0f}")
-            
-            with col3:
-                st.subheader("📈 Efficiency Metrics")
-                
-                # Efficiency statistics
-                avg_efficiency = team_allocation_data['Efficiency_Score'].mean()
-                max_efficiency = team_allocation_data['Efficiency_Score'].max()
-                min_efficiency = team_allocation_data['Efficiency_Score'].min()
-                
-                st.metric("Average Efficiency", f"{avg_efficiency:.1f}%")
-                st.metric("Max Efficiency", f"{max_efficiency:.1f}%")
-                st.metric("Min Efficiency", f"{min_efficiency:.1f}%")
-                
-                # Performance breakdown
-                status_counts = team_allocation_data['Status'].value_counts()
-                st.write("**Performance Breakdown:**")
-                for status, count in status_counts.items():
-                    pct = (count / len(team_allocation_data)) * 100
-                    st.write(f"• {status}: {count} ({pct:.1f}%)")
-            
-            # Data table with full width and better formatting
-            st.subheader("📋 Complete Team Allocation Data")
-            
-            # Format the dataframe for better display
-            display_df = team_allocation_data.copy()
-            display_df = display_df.sort_values('Efficiency_Score', ascending=False)
-            
-            # Round numeric columns for better display
-            numeric_columns = ['Total_Hours', 'Avg_Hours_Per_Day', 'Efficiency_Score']
-            for col in numeric_columns:
-                if col in display_df.columns:
-                    display_df[col] = display_df[col].round(2)
-            
-            # Add color coding for status
-            def highlight_status(row):
-                colors = {
-                    'High Performance': 'background-color: #d4edda; color: #155724;',
-                    'Good Performance': 'background-color: #d1ecf1; color: #0c5460;',
-                    'Average Performance': 'background-color: #fff3cd; color: #856404;',
-                    'Low Performance': 'background-color: #f8d7da; color: #721c24;'
-                }
-                return [colors.get(row['Status'], '')] * len(row)
-            
-            # Apply styling
-            styled_df = display_df.style.apply(highlight_status, axis=1)
-            
-            # Configure column formatting
-            styled_df = styled_df.format({
-                'Total_Hours': '{:,.1f}',
-                'Avg_Hours_Per_Day': '{:.2f}',
-                'Efficiency_Score': '{:.1f}%',
-                'Days_Worked': '{:.0f}'
-            })
-            
-            # Display the styled dataframe with selection
-            selected_indices = st.dataframe(
-                styled_df,
-                use_container_width=True,
-                height=400,
-                on_select="rerun",
-                selection_mode="single-row"
-            )
-            
-            # Handle client selection for detailed user data
-            if selected_indices.selection.rows:
-                selected_row_idx = selected_indices.selection.rows[0]
-                selected_row = display_df.iloc[selected_row_idx]
-                
-                # Display detailed user data for selected client
-                st.markdown("---")
-                st.subheader(f"👤 User Details for {selected_row['Client']}")
-                
-                # Get detailed user data using the client-user-data API
-                with st.spinner(f"Fetching user data for {selected_row['Client']}..."):
-                    user_data = fetch_client_user_data_direct(
-                        jobcode_id=selected_row['Jobcode_ID'],
-                        user_id=selected_row['User_ID'],
-                        page=1,
-                        limit=50
-                    )
-                
-                if user_data and user_data.get('data'):
-                    # Display summary metrics
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Total Entries", user_data.get('total', 0))
-                    
-                    with col2:
-                        total_duration = sum(entry.get('total_duration', 0) for entry in user_data['data'])
-                        st.metric("Total Duration", f"{total_duration:.1f} hours")
-                    
-                    with col3:
-                        avg_duration = total_duration / len(user_data['data']) if user_data['data'] else 0
-                        st.metric("Avg Duration/Entry", f"{avg_duration:.1f} hours")
-                    
-                    with col4:
-                        unique_dates = len(set(entry.get('start_date', '') for entry in user_data['data']))
-                        st.metric("Work Days", f"{unique_dates:.0f} days")
-                    
-                    # Display user timesheet data
-                    st.subheader("📅 User Timesheet Data")
-                    
-                    # Convert to DataFrame for better display
-                    user_df = pd.DataFrame(user_data['data'])
-                    
-                    # Format the data for better readability
-                    if not user_df.empty:
-                        # Format dates
-                        if 'start_date' in user_df.columns:
-                            user_df['start_date'] = user_df['start_date'].apply(safe_format_date)
-                        if 'end_date' in user_df.columns:
-                            user_df['end_date'] = user_df['end_date'].apply(safe_format_date)
-                        
-                        # Round numeric columns
-                        if 'total_duration' in user_df.columns:
-                            user_df['total_duration'] = user_df['total_duration'].round(2)
-                        
-                        # Rename columns for better display
-                        column_mapping = {
-                            'start_date': 'Start Date',
-                            'user_id': 'User ID',
-                            'username': 'Username',
-                            'jobcode_id': 'Job Code ID',
-                            'end_date': 'End Date',
-                            'total_duration': 'Duration (hrs)'
-                        }
-                        user_df = user_df.rename(columns=column_mapping)
-                        
-                        # Select and display relevant columns
-                        display_columns = ['Start Date', 'Username', 'End Date', 'Duration (hrs)']
-                        available_columns = [col for col in display_columns if col in user_df.columns]
-                        user_display = user_df[available_columns].copy()
-                        
-                        # Add efficiency status based on duration
-                        if 'Duration (hrs)' in user_display.columns:
-                            def get_duration_status(duration):
-                                if duration >= 8:
-                                    return "Full Day"
-                                elif duration >= 6:
-                                    return "Good Day"
-                                elif duration >= 4:
-                                    return "Partial Day"
-                                else:
-                                    return "Short Day"
-                            
-                            user_display['Status'] = user_display['Duration (hrs)'].apply(get_duration_status)
-                            
-                            # Add color coding for duration status
-                            def highlight_duration_status(row):
-                                colors = {
-                                    'Full Day': 'background-color: #d4edda; color: #155724;',
-                                    'Good Day': 'background-color: #d1ecf1; color: #0c5460;',
-                                    'Partial Day': 'background-color: #fff3cd; color: #856404;',
-                                    'Short Day': 'background-color: #f8d7da; color: #721c24;'
-                                }
-                                return [colors.get(row['Status'], '')] * len(row)
-                            
-                            styled_user = user_display.style.apply(highlight_duration_status, axis=1)
-                            styled_user = styled_user.format({'Duration (hrs)': '{:.1f}'})
-                            
-                            # Display the styled dataframe
-                            st.dataframe(
-                                styled_user,
-                                use_container_width=True,
-                                height=400
-                            )
-                        else:
-                            st.dataframe(user_display, use_container_width=True, height=400)
-                        
-                        # Show API endpoint info
-                        
-                        # Show pagination info
-                        if user_data.get('total_pages', 0) > 1:
-                            st.write(f"📄 **Pagination**: Page {user_data.get('page', 1)} of {user_data.get('total_pages', 1)} (Total: {user_data.get('total', 0)} entries)")
-                        
-                        # Additional insights
-                        st.subheader("📈 User Performance Insights")
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.write("**Work Pattern Analysis:**")
-                            if 'Duration (hrs)' in user_display.columns:
-                                avg_daily_hours = user_display['Duration (hrs)'].mean()
-                                max_daily_hours = user_display['Duration (hrs)'].max()
-                                min_daily_hours = user_display['Duration (hrs)'].min()
-                                
-                                st.write(f"• Average daily hours: {avg_daily_hours:.1f}")
-                                st.write(f"• Maximum daily hours: {max_daily_hours:.1f}")
-                                st.write(f"• Minimum daily hours: {min_daily_hours:.1f}")
-                        
-                        with col2:
-                            st.write("**Work Status Breakdown:**")
-                            if 'Status' in user_display.columns:
-                                status_counts = user_display['Status'].value_counts()
-                                for status, count in status_counts.items():
-                                    pct = (count / len(user_display)) * 100
-                                    st.write(f"• {status}: {count} days ({pct:.1f}%)")
-                    else:
-                        st.warning("No user timesheet data available for this selection.")
-                else:
-                    st.warning("No user data available for this client.")
-            
-            # Add instruction for client selection
-        
-        else:
-            st.info("💡 Team allocation data will be displayed when API data is available")
-            
-            # Fallback display
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("👥 Team Assignment")
-            
-            with col2:
-                st.subheader("⚡ Resource Utilization")
     
     with tab6:
         st.subheader("🔍 Project & Client Explorer")
@@ -1152,17 +720,7 @@ def main():
         with col3:
             st.write(f"**{len(available_projects)} projects available**")
         
-        # Debug information
-        if st.checkbox("Show Debug Info", value=False, key="general_debug"):
-            st.write("**Debug Information:**")
-            st.write(f"Available projects count: {len(available_projects)}")
-            st.write(f"Available clients count: {len(available_clients)}")
-            if available_projects:
-                st.write("Sample projects:")
-                for i, project in enumerate(available_projects[:3]):
-                    st.write(f"  {i+1}. {project['name']} (ID: {project['jobcode_id']})")
-            else:
-                st.write("No projects loaded - check API response above")
+    
         
         # Create dropdown
         if available_projects:
@@ -1200,7 +758,7 @@ def main():
                 if view_type == "📊 Summary Data":
                     # Show project summary
                     project_info = next((p for p in available_projects if p['jobcode_id'] == jobcode_id), None)
-                    
+                    client_time_summary_client_data = fetch_client_time_summary_direct(page=1, limit=1000)
                     if project_info:
                         col1, col2, col3, col4 = st.columns(4)
                         
@@ -1211,12 +769,18 @@ def main():
                             st.metric("Job Code ID", jobcode_id)
                         
                         with col3:
-                            st.metric("Total Duration", f"{project_info['total_duration']:.1f} hours")
+                            total_duration = project_info.get('total_duration', 0)
+                            if total_duration is None:
+                                total_duration = 0
+                            st.metric("Total Duration", f"{total_duration:.1f} hours")
                         
                         with col4:
                             # Calculate efficiency if we have days worked
-                            days_worked = next((item.get('days_worked', 0) for item in api_data['client_time_summary']['data'] if item.get('jobcode_id') == jobcode_id), 0)
-                            avg_hours = project_info['total_duration'] / days_worked if days_worked > 0 else 0
+                            total_duration = project_info.get('total_duration', 0)
+                            if total_duration is None:
+                                total_duration = 0
+                            days_worked = next((item.get('days_worked', 0) for item in client_time_summary_client_data['data'] if item.get('jobcode_id') == jobcode_id), 0)
+                            avg_hours = total_duration / days_worked if days_worked > 0 else 0
                             st.metric("Avg Hours/Day", f"{avg_hours:.1f}")
                         
                         # Show project timeline
@@ -1224,7 +788,7 @@ def main():
                         timeline_data = {
                             'Metric': ['Total Duration', 'Days Worked', 'Average Hours/Day', 'Efficiency Score'],
                             'Value': [
-                                f"{project_info['total_duration']:.1f} hours",
+                                f"{total_duration:.1f} hours",
                                 f"{days_worked:.0f} days",
                                 f"{avg_hours:.1f} hours",
                                 f"{(avg_hours/8*100):.1f}%" if avg_hours > 0 else "0%"
@@ -1524,7 +1088,6 @@ def main():
                                             key=table_key
                                         )
                                     
-                                    # Show API endpoint info
                                     
                                     # Show pagination info
                                     if detailed_user_data.get('total_pages', 0) > 1:
@@ -1825,7 +1388,6 @@ def main():
                     else:
                         st.warning("No timesheet data available for this project.")
                 
-                # Show API endpoint info
                 
             except Exception as e:
                 st.error(f"Error processing selection: {str(e)}")
@@ -1859,20 +1421,12 @@ def main():
             client_data = fresh_client_data
             
             # Display API metadata
-            col1, col2, col3, col4 = st.columns(4)
+           
+            st.metric("Total Records", len(client_data['data']))
             
-            with col1:
-                        st.metric("Total Records", len(client_data.get('data', [])))
+           
             
-            with col2:
-                st.metric("Current Page", client_data.get('page', 0) + 1)
             
-            with col3:
-                st.metric("Records per Page", client_data.get('limit', 10))
-            
-            with col4:
-                total_pages = client_data.get('total_pages', 0)
-                st.metric("Total Pages", total_pages)
             
             # Display the raw API data
             st.subheader("📋 Client Time Summary Data")
@@ -1916,8 +1470,7 @@ def main():
                     height=400
                 )
                 
-                # Show API endpoint info
-                st.info(f"📡 **API Endpoint**: `GET http://16.171.230.164/api/v1/client-time-summary?page={page}&limit={limit}`")
+                
                 
                 # Add summary statistics
                 st.subheader("📈 Data Summary")
