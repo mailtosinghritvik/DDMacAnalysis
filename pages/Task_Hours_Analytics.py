@@ -238,8 +238,17 @@ def create_planned_vs_actual_chart(df):
     else:
         task_data['Actual_Hours'] = 0
     
-    # Calculate variance
-    task_data['Variance'] = task_data['Actual_Hours'] - task_data['Estimated_Hours']
+    # Calculate statistical variance between Actual_Hours and Estimated_Hours
+    # Treating each as a single observation from two samples, so variance = ((x1 - mean)^2 + (x2 - mean)^2) / (n-1) where n=2
+    def calc_stat_variance(row):
+        x1 = row['Actual_Hours']
+        x2 = row['Estimated_Hours']
+        mean = (x1 + x2) / 2
+        # For n=2, denominator is 1
+        return (((x1 - mean) ** 2 + (x2 - mean) ** 2) / 1)**0.5
+
+    task_data['Variance'] = task_data.apply(calc_stat_variance, axis=1)
+    task_data['over_underBud'] = task_data['Actual_Hours'] - task_data['Estimated_Hours']
     task_data['Variance_Percent'] = np.where(
         task_data['Estimated_Hours'] > 0,
         (task_data['Variance'] / task_data['Estimated_Hours'] * 100).round(2),
@@ -680,12 +689,12 @@ def main():
             st.metric("Average Variance", f"{avg_variance:.1f} hours")
         
         with col2:
-            over_budget_tasks = len(task_data[task_data['Variance'] > 0])
-            st.metric("Over Budget Tasks", over_budget_tasks)
+            over_budget_tasks = len(task_data[task_data['over_underBud'] > 0]) # count of all task acutla > estimat
+            st.metric("Over Time Tasks", over_budget_tasks)
         
         with col3:
-            under_budget_tasks = len(task_data[task_data['Variance'] < 0])
-            st.metric("Under Budget Tasks", under_budget_tasks)
+            under_budget_tasks = len(task_data[task_data['over_underBud'] < 0]) # count of all task acutla < estimat
+            st.metric("Under Time Tasks", under_budget_tasks)
     
     # Additional AccuBid-specific statistics
     if not df.empty:
@@ -697,7 +706,25 @@ def main():
             st.metric("Total Estimated Hours", f"{total_estimated:.1f}")
         
         with col2:
-            total_actual = df['duration_hours'].sum() if 'duration_hours' in df.columns else 0
+            unique_job_names = df['job_name'].dropna().unique().tolist()
+            total_actual = 0
+            for job_name in unique_job_names:
+                # Get jobid from jobcodes table
+                jobid_response = supabase.table("jobcodes").select("id").eq("name", job_name).execute()
+                jobid = None
+                if jobid_response and jobid_response.data and len(jobid_response.data) > 0:
+                    jobid = jobid_response.data[0].get("id")
+                
+                # If jobid found, get sum of times from timesheets table
+                if jobid:
+                    times_response = supabase.table("timesheets").select("duration").eq("jobcode_id", jobid).execute()
+                    total_times = 0
+                    if times_response and times_response.data:
+                        # Sum the 'duration' field for all records and convert to hours
+                        total_times = sum([row.get("duration", 0) or 0 for row in times_response.data]) / 3600
+                    total_actual += total_times
+                else:
+                    total_actual += 0
             st.metric("Total Actual Hours", f"{total_actual:.1f}")
         
         with col3:
