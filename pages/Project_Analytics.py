@@ -7,6 +7,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import requests
 import json
+from supabase import create_client
 
 # Import dual data source utilities
 from utils import (
@@ -34,6 +35,10 @@ st.set_page_config(
     layout="wide"
 )
 
+ # Query the users table for users where status is 'isactive'
+SUPABASE_URL = "https://tgendmgdrljuxxxyynpz.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Custom CSS for project analytics with dual data sources
 st.markdown("""
 <style>
@@ -599,12 +604,11 @@ def create_hours_vs_days_chart(team_allocation_data):
 
 def display_project_kpis(api_data, estimates_data, progress_data):
     """Display project-level KPIs using client time summary data"""
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col3, col4, col5 = st.columns(4)
     
     # Get client time summary data
-    client_data = api_data.get('client_time_summary', {}) if api_data else {}
+    client_data = fetch_client_time_summary_direct(page=1, limit=1000)
     client_records = client_data.get('data', []) if client_data else []
-    
     with col1:
         # Count unique jobcode_ids as active projects
         if client_records:
@@ -613,15 +617,17 @@ def display_project_kpis(api_data, estimates_data, progress_data):
         else:
             st.metric("Active Projects", 0)
     
-    with col2:
-        # For now, we don't have completion status in the API, so show N/A
-        st.metric("Completed Projects", "N/A")
+   
     
     with col3:
         # Calculate total duration as a proxy for budget/work
         if client_records:
-            total_duration = sum([record.get('total_duration', 0) for record in client_records])
-            st.metric("Total Hours", f"{total_duration:,.1f}")
+            # Safely sum total_duration, treating None as 0
+            total_duration = sum(
+                record.get('total_duration', 0) if record.get('total_duration', 0) is not None else 0
+                for record in client_records
+            )
+            st.metric("Total Hours", f"{total_duration:.1f}")
         else:
             st.metric("Total Hours", "N/A")
     
@@ -631,14 +637,19 @@ def display_project_kpis(api_data, estimates_data, progress_data):
             project_durations = {}
             for record in client_records:
                 jobcode_id = record.get('jobcode_id')
+                # Safely handle None values for total_duration
                 duration = record.get('total_duration', 0)
+                if duration is None:
+                    duration = 0
                 if jobcode_id in project_durations:
                     project_durations[jobcode_id] += duration
                 else:
                     project_durations[jobcode_id] = duration
-            
+
             if project_durations:
-                avg_duration = sum(project_durations.values()) / len(project_durations)
+                # Filter out None values just in case
+                durations = [d if d is not None else 0 for d in project_durations.values()]
+                avg_duration = sum(durations) / len(durations) if durations else 0
                 st.metric("Avg Hours/Project", f"{avg_duration:.1f}")
             else:
                 st.metric("Avg Hours/Project", "N/A")
@@ -648,7 +659,14 @@ def display_project_kpis(api_data, estimates_data, progress_data):
     with col5:
         # Count unique users as team size
         if client_records:
-            unique_users = len(set([record.get('user_id') for record in client_records if record.get('user_id')]))
+           
+            try:
+                response = supabase.table("users").select("id").eq("active", "TRUE").execute()
+                active_users = response.data if hasattr(response, "data") else response
+                unique_users = len(active_users) if active_users else 0
+            except Exception as e:
+                st.error(e)
+                unique_users = 0
             st.metric("Active Users", unique_users)
         else:
             st.metric("Active Users", 0)
@@ -740,7 +758,7 @@ def main():
         st.write("**View Options:**")
         view_type = st.radio(
             "What would you like to see?",
-            ["📊 Summary Data", "👥 User Details", "📅 Timesheet Data"],
+            ["📊 Summary Data", "👥 User Details"],
             horizontal=True
         )
         
@@ -812,6 +830,11 @@ def main():
                     if user_data and user_data.get('data'):
                         # Get unique users
                         users_df = pd.DataFrame(user_data['data'])
+
+                        # Ensure numeric columns are correct dtype
+                        for col in ['total_duration', 'days_worked']:
+                            users_df[col] = pd.to_numeric(users_df[col], errors='coerce').fillna(0)
+
                         unique_users = users_df.groupby('username').agg({
                             'user_id': 'first',
                             'total_duration': 'sum',
@@ -819,13 +842,19 @@ def main():
                         }).reset_index()
                         
                         unique_users.columns = ['Username', 'User ID', 'Total Hours', 'Work Days']
-                        unique_users['Avg Hours/Day'] = unique_users['Total Hours'] / unique_users['Work Days']
+
+                        # Ensure numeric columns are correct dtype after aggregation
+                        unique_users['Total Hours'] = pd.to_numeric(unique_users['Total Hours'], errors='coerce').fillna(0)
+                        unique_users['Work Days'] = pd.to_numeric(unique_users['Work Days'], errors='coerce').fillna(0)
+
+                        unique_users['Avg Hours/Day'] = unique_users['Total Hours'] / unique_users['Work Days'].replace(0, pd.NA)
+                        unique_users['Avg Hours/Day'] = unique_users['Avg Hours/Day'].fillna(0)
                         unique_users['Efficiency %'] = (unique_users['Avg Hours/Day'] / 8 * 100).clip(0, 100)
                         
                         # Round numeric columns
                         numeric_cols = ['Total Hours', 'Avg Hours/Day', 'Efficiency %']
                         for col in numeric_cols:
-                            unique_users[col] = unique_users[col].round(2)
+                            unique_users[col] = pd.to_numeric(unique_users[col], errors='coerce').round(2).fillna(0)
                         
                         # Add performance status
                         def get_user_status(efficiency):
@@ -895,7 +924,10 @@ def main():
                                     st.metric("Total Entries", detailed_user_data.get('total', 0))
                                 
                                 with col2:
-                                    total_duration = sum(entry.get('total_duration', 0) for entry in detailed_user_data['data'])
+                                    total_duration = sum(
+                                        entry.get('total_duration', 0) or 0
+                                        for entry in detailed_user_data['data']
+                                    )
                                     st.metric("Total Duration", f"{total_duration:.1f} hours")
                                 
                                 with col3:
@@ -916,7 +948,7 @@ def main():
                                 with col2:
                                     view_mode = st.radio(
                                         "Data View:",
-                                        ["📅 Daily", "📊 Weekly", "📋 All Data"],
+                                        ["📅 Daily", "📊 Weekly"],
                                         horizontal=True,
                                         key=f"view_mode_{selected_user_id}"
                                     )
@@ -979,7 +1011,7 @@ def main():
                                             detailed_df = weekly_data[['work_date', 'end_date', 'total_duration']].copy()
                                     
                                     # For Daily and All Data views, show individual records
-                                    if view_mode in ["📅 Daily", "📋 All Data"]:
+                                    if view_mode in ["📅 Daily"]:
                                         # Sort by work_date for better display
                                         if 'work_date' in detailed_df.columns:
                                             detailed_df = detailed_df.sort_values('work_date', ascending=False)
@@ -1166,7 +1198,7 @@ def main():
                         with col2:
                             view_mode = st.radio(
                                 "Data View:",
-                                ["📅 Daily", "📊 Weekly", "📋 All Data"],
+                                ["📅 Daily", "📊 Weekly"],
                                 horizontal=True,
                                 key=f"timesheet_view_mode_{jobcode_id}"
                             )
@@ -1268,7 +1300,7 @@ def main():
                                     users_df = weekly_data[['work_date', 'username', 'end_date', 'total_duration']].copy()
                             
                             # For Daily and All Data views, show individual records
-                            if view_mode in ["📅 Daily", "📋 All Data"]:
+                            if view_mode in ["📅 Daily"]:
                                 # Sort by work_date for better display
                                 if 'work_date' in users_df.columns:
                                     users_df = users_df.sort_values('work_date', ascending=False)
@@ -1398,16 +1430,10 @@ def main():
         st.subheader("📊 Real-Time API Data View")
         
         # Add controls for API calls
-        col1, col2, col3 = st.columns([2, 1, 1])
+
+        st.write("**API Controls**")
         
-        with col1:
-            st.write("**API Controls**")
-        
-        with col2:
-            page = st.number_input("Page", min_value=1, max_value=100, value=1, step=1)
-        
-        with col3:
-            limit = st.number_input("Limit", min_value=1, max_value=100, value=10, step=1)
+       
         
         # Refresh button
         if st.button("🔄 Refresh API Data", type="primary"):
@@ -1415,14 +1441,26 @@ def main():
         
         # Make fresh API call with user parameters
         with st.spinner("Fetching fresh data from API..."):
-            fresh_client_data = fetch_client_time_summary_direct(page=page, limit=limit)
+            fresh_client_data = fetch_client_time_summary_direct(page=1, limit=1000)
         
         if fresh_client_data and fresh_client_data.get('data'):
             client_data = fresh_client_data
             
             # Display API metadata
            
-            st.metric("Total Records", len(client_data['data']))
+            # Fix: client_data is a dict with a 'data' key containing the records
+            st.metric(
+                "Total Records",
+                len(
+                    set(
+                        [
+                            record.get('jobcode_id')
+                            for record in client_data.get('data', [])
+                            if isinstance(record, dict) and record.get('jobcode_id')
+                        ]
+                    )
+                )
+            )
             
            
             
@@ -1485,7 +1523,22 @@ def main():
                     st.metric("Average Hours per Client", f"{avg_hours:.1f}")
                 
                 with col3:
-                    total_days = df['Days Worked'].sum()
+                    # Calculate total days as the number of weekdays between the earliest start and latest end date (inclusive)
+                    if 'Start Date' in df.columns and 'End Date' in df.columns:
+                        # Filter out empty dates
+                        valid_start_dates = df['Start Date'][df['Start Date'] != '']
+                        valid_end_dates = df['End Date'][df['End Date'] != '']
+                        if not valid_start_dates.empty and not valid_end_dates.empty:
+                            min_start = pd.to_datetime(valid_start_dates.min())
+                            max_end = pd.to_datetime(valid_end_dates.max())
+                            # Generate all dates in range
+                            all_dates = pd.date_range(min_start, max_end, freq='D')
+                            # Exclude weekends (Monday=0, Sunday=6)
+                            total_days = sum(all_dates.weekday < 5)
+                        else:
+                            total_days = 0
+                    else:
+                        total_days = 0
                     st.metric("Total Days Worked", f"{total_days:,.0f}")
                 
                 # Top clients by hours

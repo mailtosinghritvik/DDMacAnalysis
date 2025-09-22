@@ -199,6 +199,8 @@ def fetch_available_jobcodes():
     except Exception:
         return []
 
+
+
 def create_planned_vs_actual_chart(df):
     """Create planned vs actual hours chart"""
     if df.empty:
@@ -228,7 +230,7 @@ def create_planned_vs_actual_chart(df):
     task_data.columns = new_columns
     
     # Convert time estimates from hours to hours (already in hours for AccuBid data)
-    task_data['Planned_Hours'] = task_data['Estimated_Hours'].fillna(0)
+    #task_data['Planned_Hours'] = task_data['Estimated_Hours'].fillna(0)
     
     # Handle actual hours
     if 'Actual_Hours' in task_data.columns:
@@ -237,10 +239,10 @@ def create_planned_vs_actual_chart(df):
         task_data['Actual_Hours'] = 0
     
     # Calculate variance
-    task_data['Variance'] = task_data['Actual_Hours'] - task_data['Planned_Hours']
+    task_data['Variance'] = task_data['Actual_Hours'] - task_data['Estimated_Hours']
     task_data['Variance_Percent'] = np.where(
-        task_data['Planned_Hours'] > 0,
-        (task_data['Variance'] / task_data['Planned_Hours'] * 100).round(2),
+        task_data['Estimated_Hours'] > 0,
+        (task_data['Variance'] / task_data['Estimated_Hours'] * 100).round(2),
         0
     )
     
@@ -251,9 +253,9 @@ def create_planned_vs_actual_chart(df):
     fig.add_trace(go.Bar(
         name='Estimated Hours',
         x=task_data['Task_Name'],
-        y=task_data['Planned_Hours'],
+        y=task_data['Estimated_Hours'],
         marker_color='lightblue',
-        text=task_data['Planned_Hours'].round(1),
+        text=task_data['Estimated_Hours'].round(1),
         textposition='auto',
     ))
     
@@ -402,6 +404,9 @@ def create_user_efficiency_chart(df):
     
     return fig, task_data
 
+def fetch_est_vs_act_hrs(df):
+    pass
+
 def create_job_analysis_chart(df):
     """Create job-based analysis chart"""
     if df.empty:
@@ -413,13 +418,36 @@ def create_job_analysis_chart(df):
     
     # Group by job name and calculate totals
     job_data = df.groupby('job_name').agg({
-        'time_estimate': 'sum',
-        'duration_hours': 'sum' if 'duration_hours' in df.columns else lambda x: 0
+        'time_estimate': 'sum'
     }).reset_index()
+    
+    # Get actual hours from timesheet table for each job
+    actual_hours_dict = {}
+    unique_job_names = df['job_name'].dropna().unique().tolist()
+    
+    for job_name in unique_job_names:
+        # Get jobid from jobcodes table
+        jobid_response = supabase.table("jobcodes").select("id").eq("name", job_name).execute()
+        jobid = None
+        if jobid_response and jobid_response.data and len(jobid_response.data) > 0:
+            jobid = jobid_response.data[0].get("id")
+        
+        # If jobid found, get sum of times from timesheets table
+        if jobid:
+            times_response = supabase.table("timesheets").select("duration").eq("jobcode_id", jobid).execute()
+            total_times = 0
+            if times_response and times_response.data:
+                # Sum the 'duration' field for all records and convert to hours
+                total_times = sum([row.get("duration", 0) or 0 for row in times_response.data]) / 3600
+            actual_hours_dict[job_name] = total_times
+        else:
+            actual_hours_dict[job_name] = 0
     
     # Convert time estimates to hours (already in hours for AccuBid data)
     job_data['Estimated_Hours'] = job_data['time_estimate'].fillna(0)
-    job_data['Actual_Hours'] = job_data['duration_hours'].fillna(0)
+    
+    # Map actual hours to each job
+    job_data['Actual_Hours'] = job_data['job_name'].map(actual_hours_dict).fillna(0)
     
     # Create the chart
     fig = go.Figure()
@@ -485,11 +513,7 @@ def create_task_category_chart(df):
         hovertemplate='<b>%{label}</b><br>Estimated Hours: %{value:.1f}<br>Percentage: %{percent}<extra></extra>'
     )])
     
-    fig.update_layout(
-        title='Task Category Distribution (Estimated Hours)',
-        height=500,
-        showlegend=True
-    )
+  
     
     return fig, category_data
 
@@ -566,13 +590,9 @@ def main():
     st.subheader("🔧 Controls & Filters")
     
     # Create columns for controls
-    col1, col2, col3, col4 = st.columns(4)
+    col3, col4 = st.columns(2)
     
-    with col1:
-        limit = st.number_input("Records Limit", min_value=10, max_value=1000, value=100, step=10)
-    
-    with col2:
-        offset = st.number_input("Offset", min_value=0, value=0, step=10)
+ 
     
     with col3:
         # Create job name dropdown from sample data
@@ -591,42 +611,13 @@ def main():
     
     # Fetch data
     with st.spinner("Loading task hours data..."):
-        df = fetch_task_hours_data(limit=limit, offset=offset, jobcode_id=jobcode_id, job_name=selected_job_name)
+        df = fetch_task_hours_data(limit=1000, offset=0, jobcode_id=jobcode_id, job_name=selected_job_name)
     if df.empty:
         return
     
-    # Display data summary
-    st.subheader("📊 Data Summary")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if 'task_name' in df.columns:
-            st.metric("Task Types", len(df['task_name'].unique()))
-        else:
-            st.metric("Task Types", "N/A")
-    
-    with col2:
-        if 'duration_hours' in df.columns:
-            st.metric("Total Actual Hours", f"{df['duration_hours'].sum():.1f}")
-        else:
-            st.metric("Total Actual Hours", "N/A")
-    
-    with col3:
-        if 'time_estimate' in df.columns:
-            # Sum estimated hours (already in hours for AccuBid data)
-            estimated_hours = df['time_estimate'].fillna(0).sum()
-            st.metric("Total Estimated Hours", f"{estimated_hours:.1f}")
-        else:
-            st.metric("Total Estimated Hours", "N/A")
-    
-    with col4:
-        if 'job_name' in df.columns:
-            st.metric("Jobs", len(df['job_name'].unique()))
-        else:
-            st.metric("Jobs", "N/A")
     
     # Main charts
-    st.markdown("---")
+  
     
     # Job Analysis Chart
     st.subheader("🏗️ Job Analysis - Estimated vs Actual Hours")
@@ -638,20 +629,8 @@ def main():
         st.subheader("📋 Job Details")
         st.dataframe(job_data, use_container_width=True)
     
-    # Task Category Analysis
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Task Category Distribution")
-        category_fig, category_data = create_task_category_chart(df)
-        if category_fig:
-            st.plotly_chart(category_fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📋 Task Category Details")
-        if not category_data.empty:
-            st.dataframe(category_data, use_container_width=True)
+   
+  
     
     # Planned vs Actual Hours Chart
     st.markdown("---")
