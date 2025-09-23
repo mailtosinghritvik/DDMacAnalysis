@@ -402,7 +402,540 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ==============================================
--- 6. DASHBOARD SUMMARY FUNCTION
+-- 6. USER MANAGEMENT FUNCTIONS
+-- ==============================================
+
+-- Function to get available users (for dropdowns and selections)
+CREATE OR REPLACE FUNCTION get_available_users()
+RETURNS TABLE (
+    user_id BIGINT,
+    display_name TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT,
+    active BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        u.id as user_id,
+        COALESCE(u.display_name, CONCAT(u.first_name, ' ', u.last_name)) as display_name,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.active
+    FROM users u
+    WHERE u.active = true
+    ORDER BY u.display_name, u.first_name, u.last_name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get available clients (for dropdowns and selections)
+CREATE OR REPLACE FUNCTION get_available_clients()
+RETURNS TABLE (
+    client_id BIGINT,
+    client_name TEXT,
+    jobcode_name TEXT,
+    billable BOOLEAN,
+    active BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        j.id as client_id,
+        j.name as client_name,
+        j.name as jobcode_name,
+        j.billable,
+        j.active
+    FROM jobcodes j
+    WHERE j.active = true
+    ORDER BY j.name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ==============================================
+-- 7. USER ANALYTICS FUNCTIONS
+-- ==============================================
+
+-- Function to get user daily work summary
+CREATE OR REPLACE FUNCTION get_user_daily_work_summary(
+    user_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    work_date DATE,
+    total_hours NUMERIC,
+    clients_worked BIGINT,
+    sessions BIGINT,
+    longest_session_hours NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        t.date as work_date,
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        COUNT(DISTINCT j.id) as clients_worked,
+        COUNT(t.id) as sessions,
+        COALESCE(MAX(t.duration) / 3600.0, 0) as longest_session_hours
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    WHERE t.user_id = user_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param
+    GROUP BY t.date
+    ORDER BY t.date DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get user client time distribution
+CREATE OR REPLACE FUNCTION get_user_client_time_distribution(
+    user_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    client_name TEXT,
+    total_hours NUMERIC,
+    sessions BIGINT,
+    avg_session_hours NUMERIC,
+    first_date DATE,
+    last_date DATE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        j.name as client_name,
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        COUNT(t.id) as sessions,
+        CASE 
+            WHEN COUNT(t.id) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(t.id)
+            ELSE 0
+        END as avg_session_hours,
+        MIN(t.date) as first_date,
+        MAX(t.date) as last_date
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    WHERE t.user_id = user_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param
+    GROUP BY j.id, j.name
+    ORDER BY total_hours DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get user vs team comparison metrics
+CREATE OR REPLACE FUNCTION get_user_team_comparison(
+    user_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    metric_name TEXT,
+    user_value NUMERIC,
+    team_average NUMERIC,
+    user_rank BIGINT,
+    total_users BIGINT,
+    percentile NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH user_metrics AS (
+        SELECT 
+            u.id as user_id,
+            COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+            COUNT(DISTINCT t.date) as working_days,
+            COUNT(DISTINCT j.id) as clients_served,
+            COUNT(t.id) as total_sessions,
+            COALESCE(SUM(t.duration) / 3600.0, 0) / NULLIF(COUNT(DISTINCT t.date), 0) as avg_hours_per_day,
+            COALESCE(SUM(t.duration) / 3600.0, 0) / NULLIF(COUNT(t.id), 0) as avg_session_length,
+            COALESCE(MAX(t.duration) / 3600.0, 0) as longest_session
+        FROM users u
+        LEFT JOIN timesheets t ON u.id = t.user_id
+        LEFT JOIN jobcodes j ON t.jobcode_id = j.id
+        WHERE u.active = true
+            AND (t.date IS NULL OR (t.date >= start_date_param AND t.date <= end_date_param))
+        GROUP BY u.id
+    ),
+    ranked_metrics AS (
+        SELECT 
+            user_id,
+            total_hours,
+            working_days,
+            clients_served,
+            total_sessions,
+            avg_hours_per_day,
+            avg_session_length,
+            longest_session,
+            RANK() OVER (ORDER BY total_hours DESC) as total_hours_rank,
+            RANK() OVER (ORDER BY avg_hours_per_day DESC) as avg_hours_rank,
+            RANK() OVER (ORDER BY clients_served DESC) as clients_rank,
+            RANK() OVER (ORDER BY avg_session_length DESC) as session_length_rank,
+            RANK() OVER (ORDER BY longest_session DESC) as longest_session_rank,
+            COUNT(*) OVER() as total_users
+        FROM user_metrics
+    )
+    SELECT 
+        'Total Hours'::TEXT as metric_name,
+        um.total_hours as user_value,
+        AVG(um.total_hours) OVER() as team_average,
+        rm.total_hours_rank as user_rank,
+        rm.total_users,
+        (rm.total_users - rm.total_hours_rank + 1)::NUMERIC / rm.total_users * 100 as percentile
+    FROM user_metrics um
+    JOIN ranked_metrics rm ON um.user_id = rm.user_id
+    WHERE um.user_id = user_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Avg Hours/Day'::TEXT as metric_name,
+        um.avg_hours_per_day as user_value,
+        AVG(um.avg_hours_per_day) OVER() as team_average,
+        rm.avg_hours_rank as user_rank,
+        rm.total_users,
+        (rm.total_users - rm.avg_hours_rank + 1)::NUMERIC / rm.total_users * 100 as percentile
+    FROM user_metrics um
+    JOIN ranked_metrics rm ON um.user_id = rm.user_id
+    WHERE um.user_id = user_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Clients Served'::TEXT as metric_name,
+        um.clients_served as user_value,
+        AVG(um.clients_served) OVER() as team_average,
+        rm.clients_rank as user_rank,
+        rm.total_users,
+        (rm.total_users - rm.clients_rank + 1)::NUMERIC / rm.total_users * 100 as percentile
+    FROM user_metrics um
+    JOIN ranked_metrics rm ON um.user_id = rm.user_id
+    WHERE um.user_id = user_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Avg Session Length'::TEXT as metric_name,
+        um.avg_session_length as user_value,
+        AVG(um.avg_session_length) OVER() as team_average,
+        rm.session_length_rank as user_rank,
+        rm.total_users,
+        (rm.total_users - rm.session_length_rank + 1)::NUMERIC / rm.total_users * 100 as percentile
+    FROM user_metrics um
+    JOIN ranked_metrics rm ON um.user_id = rm.user_id
+    WHERE um.user_id = user_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Longest Session'::TEXT as metric_name,
+        um.longest_session as user_value,
+        AVG(um.longest_session) OVER() as team_average,
+        rm.longest_session_rank as user_rank,
+        rm.total_users,
+        (rm.total_users - rm.longest_session_rank + 1)::NUMERIC / rm.total_users * 100 as percentile
+    FROM user_metrics um
+    JOIN ranked_metrics rm ON um.user_id = rm.user_id
+    WHERE um.user_id = user_id_param;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get user period summary
+CREATE OR REPLACE FUNCTION get_user_period_summary(
+    user_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    total_hours NUMERIC,
+    working_days BIGINT,
+    avg_hours_per_day NUMERIC,
+    clients_served BIGINT,
+    total_sessions BIGINT,
+    avg_session_length NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        COUNT(DISTINCT t.date) as working_days,
+        CASE 
+            WHEN COUNT(DISTINCT t.date) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date)
+            ELSE 0
+        END as avg_hours_per_day,
+        COUNT(DISTINCT j.id) as clients_served,
+        COUNT(t.id) as total_sessions,
+        CASE 
+            WHEN COUNT(t.id) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(t.id)
+            ELSE 0
+        END as avg_session_length
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    WHERE t.user_id = user_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ==============================================
+-- 8. CLIENT ANALYTICS FUNCTIONS
+-- ==============================================
+
+-- Function to get client overview summary
+CREATE OR REPLACE FUNCTION get_client_overview_summary(
+    client_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    total_hours NUMERIC,
+    users_assigned BIGINT,
+    total_sessions BIGINT,
+    avg_hours_per_day NUMERIC,
+    working_days BIGINT,
+    first_date_worked DATE,
+    last_date_worked DATE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        COUNT(DISTINCT t.user_id) as users_assigned,
+        COUNT(t.id) as total_sessions,
+        CASE 
+            WHEN COUNT(DISTINCT t.date) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date)
+            ELSE 0
+        END as avg_hours_per_day,
+        COUNT(DISTINCT t.date) as working_days,
+        MIN(t.date) as first_date_worked,
+        MAX(t.date) as last_date_worked
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    WHERE j.id = client_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get client user allocation
+CREATE OR REPLACE FUNCTION get_client_user_allocation(
+    client_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    user_name TEXT,
+    total_hours NUMERIC,
+    percentage NUMERIC,
+    sessions BIGINT,
+    avg_session_hours NUMERIC,
+    first_date DATE,
+    last_date DATE
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH client_total_hours AS (
+        SELECT COALESCE(SUM(t.duration) / 3600.0, 0) as total_client_hours
+        FROM timesheets t
+        JOIN jobcodes j ON t.jobcode_id = j.id
+        WHERE j.id = client_id_param
+            AND t.date >= start_date_param
+            AND t.date <= end_date_param
+    )
+    SELECT 
+        COALESCE(u.username, CONCAT(u.first_name, ' ', u.last_name)) as user_name,
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        CASE 
+            WHEN cth.total_client_hours > 0 THEN 
+                (COALESCE(SUM(t.duration) / 3600.0, 0) / cth.total_client_hours * 100)
+            ELSE 0
+        END as percentage,
+        COUNT(t.id) as sessions,
+        CASE 
+            WHEN COUNT(t.id) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(t.id)
+            ELSE 0
+        END as avg_session_hours,
+        MIN(t.date) as first_date,
+        MAX(t.date) as last_date
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    JOIN users u ON t.user_id = u.id
+    CROSS JOIN client_total_hours cth
+    WHERE j.id = client_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param
+    GROUP BY u.id, u.username, u.first_name, u.last_name, cth.total_client_hours
+    ORDER BY total_hours DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get client vs other clients comparison
+CREATE OR REPLACE FUNCTION get_client_comparison(
+    client_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    metric_name TEXT,
+    client_value NUMERIC,
+    ddmac_average NUMERIC,
+    client_rank BIGINT,
+    total_clients BIGINT,
+    percentile NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH client_metrics AS (
+        SELECT 
+            j.id as client_id,
+            j.name as client_name,
+            COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+            COUNT(DISTINCT t.user_id) as users_assigned,
+            COUNT(t.id) as total_sessions,
+            COUNT(DISTINCT t.date) as working_days,
+            CASE 
+                WHEN COUNT(t.id) > 0 THEN 
+                    COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(t.id)
+                ELSE 0
+            END as avg_session_length,
+            CASE 
+                WHEN COUNT(DISTINCT t.date) > 0 THEN 
+                    COALESCE(SUM(t.duration) / 3600.0, 0) / (COUNT(DISTINCT t.date) / 7.0)
+                ELSE 0
+            END as hours_per_week
+        FROM jobcodes j
+        LEFT JOIN timesheets t ON j.id = t.jobcode_id
+        WHERE j.active = true
+            AND (t.date IS NULL OR (t.date >= start_date_param AND t.date <= end_date_param))
+        GROUP BY j.id, j.name
+    ),
+    ranked_metrics AS (
+        SELECT 
+            client_id,
+            client_name,
+            total_hours,
+            users_assigned,
+            total_sessions,
+            working_days,
+            avg_session_length,
+            hours_per_week,
+            RANK() OVER (ORDER BY total_hours DESC) as total_hours_rank,
+            RANK() OVER (ORDER BY users_assigned DESC) as users_rank,
+            RANK() OVER (ORDER BY avg_session_length DESC) as session_length_rank,
+            RANK() OVER (ORDER BY working_days DESC) as working_days_rank,
+            RANK() OVER (ORDER BY hours_per_week DESC) as hours_per_week_rank,
+            COUNT(*) OVER() as total_clients
+        FROM client_metrics
+    )
+    SELECT 
+        'Total Hours'::TEXT as metric_name,
+        cm.total_hours as client_value,
+        AVG(cm.total_hours) OVER() as ddmac_average,
+        rm.total_hours_rank as client_rank,
+        rm.total_clients,
+        (rm.total_clients - rm.total_hours_rank + 1)::NUMERIC / rm.total_clients * 100 as percentile
+    FROM client_metrics cm
+    JOIN ranked_metrics rm ON cm.client_id = rm.client_id
+    WHERE cm.client_id = client_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Users Assigned'::TEXT as metric_name,
+        cm.users_assigned as client_value,
+        AVG(cm.users_assigned) OVER() as ddmac_average,
+        rm.users_rank as client_rank,
+        rm.total_clients,
+        (rm.total_clients - rm.users_rank + 1)::NUMERIC / rm.total_clients * 100 as percentile
+    FROM client_metrics cm
+    JOIN ranked_metrics rm ON cm.client_id = rm.client_id
+    WHERE cm.client_id = client_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Avg Session Length'::TEXT as metric_name,
+        cm.avg_session_length as client_value,
+        AVG(cm.avg_session_length) OVER() as ddmac_average,
+        rm.session_length_rank as client_rank,
+        rm.total_clients,
+        (rm.total_clients - rm.session_length_rank + 1)::NUMERIC / rm.total_clients * 100 as percentile
+    FROM client_metrics cm
+    JOIN ranked_metrics rm ON cm.client_id = rm.client_id
+    WHERE cm.client_id = client_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Working Days'::TEXT as metric_name,
+        cm.working_days as client_value,
+        AVG(cm.working_days) OVER() as ddmac_average,
+        rm.working_days_rank as client_rank,
+        rm.total_clients,
+        (rm.total_clients - rm.working_days_rank + 1)::NUMERIC / rm.total_clients * 100 as percentile
+    FROM client_metrics cm
+    JOIN ranked_metrics rm ON cm.client_id = rm.client_id
+    WHERE cm.client_id = client_id_param
+    
+    UNION ALL
+    
+    SELECT 
+        'Hours per Week'::TEXT as metric_name,
+        cm.hours_per_week as client_value,
+        AVG(cm.hours_per_week) OVER() as ddmac_average,
+        rm.hours_per_week_rank as client_rank,
+        rm.total_clients,
+        (rm.total_clients - rm.hours_per_week_rank + 1)::NUMERIC / rm.total_clients * 100 as percentile
+    FROM client_metrics cm
+    JOIN ranked_metrics rm ON cm.client_id = rm.client_id
+    WHERE cm.client_id = client_id_param;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get client weekly summary
+CREATE OR REPLACE FUNCTION get_client_weekly_summary(
+    client_id_param BIGINT,
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS TABLE (
+    week_start DATE,
+    week_end DATE,
+    total_hours NUMERIC,
+    users_active BIGINT,
+    sessions BIGINT,
+    avg_session_hours NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        DATE_TRUNC('week', t.date)::DATE as week_start,
+        (DATE_TRUNC('week', t.date) + INTERVAL '6 days')::DATE as week_end,
+        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
+        COUNT(DISTINCT t.user_id) as users_active,
+        COUNT(t.id) as sessions,
+        CASE 
+            WHEN COUNT(t.id) > 0 THEN 
+                COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(t.id)
+            ELSE 0
+        END as avg_session_hours
+    FROM timesheets t
+    JOIN jobcodes j ON t.jobcode_id = j.id
+    WHERE j.id = client_id_param
+        AND t.date >= start_date_param
+        AND t.date <= end_date_param
+    GROUP BY DATE_TRUNC('week', t.date)
+    ORDER BY week_start DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ==============================================
+-- 9. DASHBOARD SUMMARY FUNCTION
 -- ==============================================
 
 -- Function to get comprehensive dashboard data

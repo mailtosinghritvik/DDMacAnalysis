@@ -263,6 +263,230 @@ class SupabaseQueryHandler:
             logger.error(f"❌ Error getting financial metrics: {str(e)}")
             return self._get_financial_fallback_data()
     
+    def get_available_users(self) -> List[Dict[str, Any]]:
+        """Get list of available users from the database"""
+        try:
+            # Use raw Supabase query to fetch users
+            if not self.connected or not self.client:
+                logger.warning("⚠️ Supabase not connected, returning empty DataFrame for get_available_users")
+                df = pd.DataFrame()
+            else:
+                try:
+                    response = self.client.table("users").select("*").execute()
+                    if hasattr(response, "data") and response.data:
+                        df = pd.DataFrame(response.data)
+                    else:
+                        df = pd.DataFrame()
+                except Exception as e:
+                    logger.error(f"❌ Error executing raw Supabase users query: {str(e)}")
+                    df = pd.DataFrame()
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No users found in database")
+                return self._get_users_fallback_data()
+            
+            # Convert to list of dictionaries
+            users = df.to_dict('records')
+            logger.info(f"✅ Retrieved {len(users)} users from database")
+            return users
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting available users: {str(e)}")
+            return self._get_users_fallback_data()
+    
+    def get_available_clients(self) -> List[Dict[str, Any]]:
+        """Get list of available clients from the database"""
+        try:
+            # Use jobcodes table to get available clients, similar to get_available_users
+            if not self.connected or not self.client:
+                logger.warning("⚠️ Supabase not connected, returning empty DataFrame for get_available_clients")
+                df = pd.DataFrame()
+            else:
+                try:
+                    response = self.client.table("jobcodes").select("*").execute()
+                    if hasattr(response, "data") and response.data:
+                        df = pd.DataFrame(response.data)
+                    else:
+                        df = pd.DataFrame()
+                except Exception as e:
+                    logger.error(f"❌ Error executing raw Supabase jobcodes query: {str(e)}")
+                    df = pd.DataFrame()
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No clients found in database")
+                return self._get_clients_fallback_data()
+            
+            # Convert to list of dictionaries
+            clients = df.to_dict('records')
+            logger.info(f"✅ Retrieved {len(clients)} clients from database")
+            return clients
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting available clients: {str(e)}")
+            return self._get_clients_fallback_data()
+    
+    def get_user_daily_work_summary(self, user_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get user daily work summary data"""
+        try:
+            params = {
+                'user_id_param': user_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_user_daily_work_summary', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No daily work summary data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting user daily work summary: {str(e)}")
+            return []
+    
+    def get_user_client_time_distribution(self, user_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get user client time distribution data"""
+        try:
+            params = {
+                'user_id_param': user_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_user_client_time_distribution', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No client time distribution data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting user client time distribution: {str(e)}")
+            return []
+    
+    def get_user_team_comparison(self, user_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get user vs team comparison data"""
+        try:
+            params = {
+                'user_id_param': user_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_user_team_comparison', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No team comparison data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting user team comparison: {str(e)}")
+            return []
+    
+    def get_user_period_summary(self, user_id: int, start_date: str, end_date: str) -> Dict[str, Any]:
+        """Get user period summary data"""
+        try:
+            params = {
+                'user_id_param': user_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_user_period_summary', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No period summary data found")
+                return self._get_user_period_fallback_data()
+            
+            # Return the first row as a dictionary
+            return df.iloc[0].to_dict() if not df.empty else {}
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting user period summary: {str(e)}")
+            return self._get_user_period_fallback_data()
+    
+    def get_client_overview_summary(self, client_id: int, start_date: str, end_date: str) -> Dict[str, Any]:
+        """Get client overview summary data"""
+        try:
+            params = {
+                'client_id_param': client_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_client_overview_summary', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No client overview data found")
+                return self._get_client_overview_fallback_data()
+            
+            # Return the first row as a dictionary
+            return df.iloc[0].to_dict() if not df.empty else {}
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting client overview summary: {str(e)}")
+            return self._get_client_overview_fallback_data()
+    
+    def get_client_user_allocation(self, client_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get client user allocation data"""
+        try:
+            params = {
+                'client_id_param': client_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_client_user_allocation', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No client user allocation data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting client user allocation: {str(e)}")
+            return []
+    
+    def get_client_comparison(self, client_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get client vs other clients comparison data"""
+        try:
+            params = {
+                'client_id_param': client_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_client_comparison', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No client comparison data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting client comparison: {str(e)}")
+            return []
+    
+    def get_client_weekly_summary(self, client_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get client weekly summary data"""
+        try:
+            params = {
+                'client_id_param': client_id,
+                'start_date_param': start_date,
+                'end_date_param': end_date
+            }
+            df = self.execute_function('get_client_weekly_summary', params)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning("⚠️ No client weekly summary data found")
+                return []
+            
+            return df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting client weekly summary: {str(e)}")
+            return []
+
     def get_dashboard_summary(self, start_date: str = None, end_date: str = None) -> Dict[str, Any]:
         """Get comprehensive dashboard summary"""
         try:
@@ -370,6 +594,114 @@ class SupabaseQueryHandler:
             'cost_efficiency': 0.89
         }
     
+    def _get_users_fallback_data(self) -> List[Dict[str, Any]]:
+        """Fallback users data when database is unavailable"""
+        return [
+            {
+                'user_id': 1,
+                'display_name': 'John Smith',
+                'first_name': 'John',
+                'last_name': 'Smith',
+                'email': 'john.smith@company.com',
+                'active': True
+            },
+            {
+                'user_id': 2,
+                'display_name': 'Jane Doe',
+                'first_name': 'Jane',
+                'last_name': 'Doe',
+                'email': 'jane.doe@company.com',
+                'active': True
+            },
+            {
+                'user_id': 3,
+                'display_name': 'Mike Johnson',
+                'first_name': 'Mike',
+                'last_name': 'Johnson',
+                'email': 'mike.johnson@company.com',
+                'active': True
+            },
+            {
+                'user_id': 4,
+                'display_name': 'Sarah Wilson',
+                'first_name': 'Sarah',
+                'last_name': 'Wilson',
+                'email': 'sarah.wilson@company.com',
+                'active': True
+            },
+            {
+                'user_id': 5,
+                'display_name': 'Tom Brown',
+                'first_name': 'Tom',
+                'last_name': 'Brown',
+                'email': 'tom.brown@company.com',
+                'active': True
+            }
+        ]
+    
+    def _get_clients_fallback_data(self) -> List[Dict[str, Any]]:
+        """Fallback clients data when database is unavailable"""
+        return [
+            {
+                'client_id': 1,
+                'client_name': 'Client A - TechCorp',
+                'jobcode_name': 'Client A - TechCorp',
+                'billable': True,
+                'active': True
+            },
+            {
+                'client_id': 2,
+                'client_name': 'Client B - BuildCo',
+                'jobcode_name': 'Client B - BuildCo',
+                'billable': True,
+                'active': True
+            },
+            {
+                'client_id': 3,
+                'client_name': 'Client C - DesignStudio',
+                'jobcode_name': 'Client C - DesignStudio',
+                'billable': True,
+                'active': True
+            },
+            {
+                'client_id': 4,
+                'client_name': 'Client D - ManufacturingInc',
+                'jobcode_name': 'Client D - ManufacturingInc',
+                'billable': True,
+                'active': True
+            },
+            {
+                'client_id': 5,
+                'client_name': 'Client E - RetailChain',
+                'jobcode_name': 'Client E - RetailChain',
+                'billable': True,
+                'active': True
+            }
+        ]
+
+    def _get_user_period_fallback_data(self) -> Dict[str, Any]:
+        """Fallback user period summary data when database is unavailable"""
+        return {
+            'total_hours': 40.0,
+            'working_days': 5,
+            'avg_hours_per_day': 8.0,
+            'clients_served': 3,
+            'total_sessions': 12,
+            'avg_session_length': 3.33
+        }
+    
+    def _get_client_overview_fallback_data(self) -> Dict[str, Any]:
+        """Fallback client overview data when database is unavailable"""
+        return {
+            'total_hours': 120.0,
+            'users_assigned': 3,
+            'total_sessions': 25,
+            'avg_hours_per_day': 8.0,
+            'working_days': 15,
+            'first_date_worked': '2025-08-01',
+            'last_date_worked': '2025-08-15'
+        }
+
     def _get_dashboard_fallback_data(self) -> Dict[str, Any]:
         """Fallback dashboard data when database is unavailable"""
         return {
@@ -386,6 +718,178 @@ class SupabaseQueryHandler:
             'avg_task_duration': 9.09,
             'cost_efficiency': 0.89
         }
+
+    def get_time_period_overview(self, start_date: str, end_date: str) -> Dict[str, Any]:
+        """
+        Get time analytics period overview summary
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Period overview data
+        """
+        try:
+            result = self.execute_function('get_time_period_overview', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.iloc[0].to_dict()
+            else:
+                logger.warning("⚠️ No time period overview data found")
+                return {
+                    'total_hours': 0.0,
+                    'total_users': 0,
+                    'total_clients': 0,
+                    'total_sessions': 0,
+                    'working_days': 0,
+                    'avg_daily_hours': 0.0,
+                    'avg_session_length': 0.0
+                }
+        except Exception as e:
+            logger.error(f"❌ Error getting time period overview: {str(e)}")
+            return {
+                'total_hours': 0.0,
+                'total_users': 0,
+                'total_clients': 0,
+                'total_sessions': 0,
+                'working_days': 0,
+                'avg_daily_hours': 0.0,
+                'avg_session_length': 0.0
+            }
+
+    def get_time_daily_distribution(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """
+        Get daily time distribution data
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: Daily distribution data
+        """
+        try:
+            result = self.execute_function('get_time_daily_distribution', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.to_dict('records')
+            else:
+                logger.warning("⚠️ No daily distribution data found")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error getting daily distribution: {str(e)}")
+            return []
+
+    def get_time_user_performance(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """
+        Get user performance ranking data
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: User performance data
+        """
+        try:
+            result = self.execute_function('get_time_user_performance', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.to_dict('records')
+            else:
+                logger.warning("⚠️ No user performance data found")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error getting user performance: {str(e)}")
+            return []
+
+    def get_time_client_activity(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """
+        Get client activity summary data
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: Client activity data
+        """
+        try:
+            result = self.execute_function('get_time_client_activity', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.to_dict('records')
+            else:
+                logger.warning("⚠️ No client activity data found")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error getting client activity: {str(e)}")
+            return []
+
+    def get_time_weekly_summary(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """
+        Get weekly summary data
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: Weekly summary data
+        """
+        try:
+            result = self.execute_function('get_time_weekly_summary', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.to_dict('records')
+            else:
+                logger.warning("⚠️ No weekly summary data found")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error getting weekly summary: {str(e)}")
+            return []
+
+    def get_time_session_analysis(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """
+        Get session length analysis data
+        
+        Args:
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: Session analysis data
+        """
+        try:
+            result = self.execute_function('get_time_session_analysis', {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            if not result.empty:
+                return result.to_dict('records')
+            else:
+                logger.warning("⚠️ No session analysis data found")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error getting session analysis: {str(e)}")
+            return []
 
 # Global instance
 supabase_handler = SupabaseQueryHandler()
