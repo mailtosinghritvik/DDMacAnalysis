@@ -593,7 +593,7 @@ def main():
     
     # Header
     st.title("⏱️ Task Hours Analytics")
-    st.markdown("Analyze planned vs actual task hours across projects and task types")
+    st.markdown("Analyze planned vs actual task hours - EVERYTHING tasks overview and detailed task breakdown")
     
     # Controls Section
     st.subheader("🔧 Controls & Filters")
@@ -621,56 +621,78 @@ def main():
     # Fetch data
     with st.spinner("Loading task hours data..."):
         df = fetch_task_hours_data(limit=1000, offset=0, jobcode_id=jobcode_id, job_name=selected_job_name)
+    
     if df.empty:
+        st.warning("No task data found for the selected project.")
         return
     
     
     # Main charts
   
     
-    # Job Analysis Chart
-    st.subheader("🏗️ Job Analysis - Estimated vs Actual Hours")
-    job_fig, job_data = create_job_analysis_chart(df)
-    if job_fig:
-        st.plotly_chart(job_fig, use_container_width=True)
-        
-        # Display job data table
-        st.subheader("📋 Job Details")
-        st.dataframe(job_data, use_container_width=True)
+    # Job Analysis Chart - Show only EVERYTHING tasks
+    st.subheader("🏗️ Job Analysis - EVERYTHING Tasks Only")
+    
+    # Filter to show only EVERYTHING tasks for this chart
+    everything_df = df[df['task_name'].str.contains('EVERYTHING', case=False, na=False)] if not df.empty and 'task_name' in df.columns else df
+    
+    if not everything_df.empty:
+        job_fig, job_data = create_job_analysis_chart(everything_df)
+        if job_fig:
+            st.plotly_chart(job_fig, use_container_width=True)
+            
+            # Display job data table
+            st.subheader("📋 Job Details - EVERYTHING Tasks")
+            st.dataframe(job_data, use_container_width=True)
+    else:
+        st.warning("No 'EVERYTHING' tasks found for the selected project.") 
     
    
   
     
-    # Planned vs Actual Hours Chart
+    # Planned vs Actual Hours Chart - Show actual tasks (excluding EVERYTHING)
     st.markdown("---")
-    st.subheader("📈 Estimated vs Actual Hours by Task Name")
-    planned_actual_fig, task_data = create_planned_vs_actual_chart(df)
-    if planned_actual_fig:
-        st.plotly_chart(planned_actual_fig, use_container_width=True)
-        
-        # Display task data table
-        st.subheader("📋 Task Details")
-        st.dataframe(task_data, use_container_width=True)
+    st.subheader("📈 Actual Tasks - Estimated vs Actual Hours")
     
-    # Variance Analysis
+    # Filter out EVERYTHING tasks for this chart
+    actual_tasks_df = df[~df['task_name'].str.contains('EVERYTHING', case=False, na=False)] if not df.empty and 'task_name' in df.columns else df
+    
+    if not actual_tasks_df.empty:
+        planned_actual_fig, task_data = create_planned_vs_actual_chart(actual_tasks_df)
+        if planned_actual_fig:
+            st.plotly_chart(planned_actual_fig, use_container_width=True)
+            
+            # Display task data table
+            st.subheader("📋 Task Details - Actual Tasks")
+            st.dataframe(task_data, use_container_width=True)
+    else:
+        st.warning("No actual task data found (excluding EVERYTHING tasks).")
+    
+    # Variance Analysis - Use actual tasks data
     st.markdown("---")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📊 Hours Variance")
-        variance_fig = create_variance_chart(task_data)
-        if variance_fig:
-            st.plotly_chart(variance_fig, use_container_width=True)
+        st.subheader("📊 Hours Variance - Actual Tasks")
+        if not actual_tasks_df.empty:
+            variance_fig = create_variance_chart(task_data)
+            if variance_fig:
+                st.plotly_chart(variance_fig, use_container_width=True)
+            else:
+                st.write("No variance data available")
         else:
-            st.write("No variance data available")
+            st.write("No actual task data available for variance analysis")
     
     with col2:
-        st.subheader("📊 Efficiency Analysis")
-        efficiency_fig = create_efficiency_chart(task_data)
-        if efficiency_fig:
-            st.plotly_chart(efficiency_fig, use_container_width=True)
+        st.subheader("📊 Efficiency Analysis - Actual Tasks")
+        if not actual_tasks_df.empty:
+            efficiency_fig = create_efficiency_chart(task_data)
+            if efficiency_fig:
+                st.plotly_chart(efficiency_fig, use_container_width=True)
+            else:
+                st.write("No efficiency data available")
         else:
-            st.write("No efficiency data available")
+            st.write("No actual task data available for efficiency analysis")
     
     # Raw Data Display
     st.markdown("---")
@@ -702,8 +724,10 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total_estimated = df['time_estimate'].sum() if 'time_estimate' in df.columns else 0
-            st.metric("Total Estimated Hours", f"{total_estimated:.1f}")
+            # Calculate total estimated hours from EVERYTHING tasks only
+            everything_tasks = df[df['task_name'].str.contains('EVERYTHING', case=False, na=False)] if 'task_name' in df.columns else df
+            total_estimated = everything_tasks['time_estimate'].sum() if 'time_estimate' in everything_tasks.columns and not everything_tasks.empty else 0
+            st.metric("Total Estimated Hours (EVERYTHING)", f"{total_estimated:.1f}")
         
         with col2:
             unique_job_names = df['job_name'].dropna().unique().tolist()
@@ -736,10 +760,12 @@ def main():
         
         with col4:
             if 'task_name' in df.columns:
-                unique_tasks = df['task_name'].nunique()
-                st.metric("Number of Tasks", unique_tasks)
+                # Count only EVERYTHING tasks
+                everything_tasks = df[df['task_name'].str.contains('EVERYTHING', case=False, na=False)]
+                unique_tasks = everything_tasks['task_name'].nunique() if not everything_tasks.empty else 0
+                st.metric("Number of EVERYTHING Tasks", unique_tasks)
             else:
-                st.metric("Number of Tasks", "N/A")
+                st.metric("Number of EVERYTHING Tasks", "N/A")
 
 if __name__ == "__main__":
     main()

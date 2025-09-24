@@ -344,9 +344,11 @@ def create_user_summary_charts(user_data, period='daily'):
         else:
             client_fig = None
         
-        # Chart 3: Hours by task
+        # Chart 3: Hours by task (excluding "EVERYTHING" tasks)
         if 'task_name' in user_data.columns:
-            task_hours = user_data.groupby('task_name')['hours_worked'].sum().reset_index()
+            # Filter out "EVERYTHING" tasks
+            filtered_user_data = user_data[~user_data['task_name'].str.contains('EVERYTHING', case=False, na=False)]
+            task_hours = filtered_user_data.groupby('task_name')['hours_worked'].sum().reset_index()
             task_hours = task_hours.sort_values('hours_worked', ascending=False).head(10)
             task_hours = task_hours.dropna()
             
@@ -661,7 +663,9 @@ def main():
                 st.subheader("📊 Summary Statistics")
                 total_hours = user_summary_data['hours_worked'].sum()
                 unique_clients = user_summary_data['client_name'].nunique()
-                unique_tasks = user_summary_data['task_name'].nunique()
+                # Filter out "EVERYTHING" tasks for unique count
+                filtered_tasks = user_summary_data[~user_summary_data['task_name'].str.contains('EVERYTHING', case=False, na=False)]
+                unique_tasks = filtered_tasks['task_name'].nunique()
                 
                 col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
                 with col_stat1:
