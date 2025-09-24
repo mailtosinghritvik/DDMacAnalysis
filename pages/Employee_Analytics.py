@@ -6,34 +6,23 @@ from plotly.subplots import make_subplots
 import numpy as np
 import requests
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
-# Import dual data source utilities
-from utils import (
-    # Original functions
-    analyze_employees_overview,
-    analyze_employee_detailed,
-    get_employee_performance_metrics,
-    TimeTrackingAnalyzer,
-    
-    # API functions
-    get_api_handler,
-    analyze_employees_overview_api,
-    analyze_employee_detailed_api,
-    
-    # Estimates functions
-    get_estimates_handler,
-    get_progress_comparison,
-    get_budget_alerts
+# Import Supabase handler
+from utils.supabase_employee_analytics_handler import (
+    get_supabase_employee_analytics_handler,
+    get_employee_data_supabase,
+    get_employee_detailed_data_supabase
 )
 
 # Set page configuration
 st.set_page_config(
-    page_title="Employee Analytics - DDMac",
+    page_title="Employee Analytics - DDMac Supabase",
     page_icon="👥",
     layout="wide"
 )
 
-# Custom CSS for employee analytics with dual data sources
+# Custom CSS for employee analytics with Supabase integration
 st.markdown("""
 <style>
     .employee-header {
@@ -101,33 +90,45 @@ st.markdown("""
         color: #dc3545;
         font-weight: bold;
     }
+    
+    .supabase-status {
+        background: #3fcf8e;
+        color: white;
+        padding: 0.5rem;
+        border-radius: 5px;
+        text-align: center;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-def get_employee_data():
-    """Fetch employee data from both API and estimates sources"""
-    api_data = None
-    estimates_data = None
-    progress_data = None
-    
+def get_employee_data_supabase_integrated():
+    """Fetch employee data using Supabase"""
     try:
-        # Get API data for employee analytics
-        api_handler = get_api_handler()
-        api_data = api_handler.get_sample_data()
+        # Use your existing Supabase credentials
+        supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
+        supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
         
-        # Get estimates data
-        estimates_handler = get_estimates_handler()
-        estimates_data = estimates_handler.get_sample_data()
+        # Get employee data using Supabase
+        employee_data, kpis = get_employee_data_supabase(supabase_url, supabase_key)
         
-        # Generate progress comparison
-        if api_data and estimates_data:
-            progress_data = get_progress_comparison(api_data, estimates_data)
-    
+        # Validate data
+        if employee_data.empty:
+            st.warning("No employee data found in Supabase database")
+            return pd.DataFrame(), {}, None
+        
+        # Convert numpy types to Python types for better compatibility
+        if isinstance(kpis, dict):
+            for key, value in kpis.items():
+                if hasattr(value, 'item'):  # numpy scalar
+                    kpis[key] = value.item()
+        
+        return employee_data, kpis, None
+        
     except Exception as e:
-        pass
-        #   st.error(f"Error fetching employee data: {str(e)}")
-    
-    return api_data, estimates_data, progress_data
+        st.error(f"Error fetching employee data: {str(e)}")
+        st.info("Please check your Supabase connection and credentials.")
+        return pd.DataFrame(), {}, None
 
 def create_employee_productivity_gauge(productivity_score, name):
     """Create productivity gauge for individual employee"""
@@ -165,18 +166,24 @@ def create_employee_productivity_gauge(productivity_score, name):
     return fig
 
 def create_employee_utilization_chart(employee_data):
-    """Create employee utilization comparison chart using real API data"""
-    if not employee_data or not employee_data.get('data'):
+    """Create employee utilization comparison chart using Supabase data"""
+    if employee_data.empty:
         return None, None
     
-    employees = employee_data['data']
-    
-    # Create utilization data from real employee data
+    # Create utilization data from Supabase results
     utilization_data = []
-    for emp in employees[:10]:  # Show top 10 employees
-        username = emp.get('username', 'Unknown')
-        total_hours = emp.get('total_hours', 0)
-        days_worked = emp.get('days_worked', 0)
+    for _, emp in employee_data.head(10).iterrows():  # Show top 10 employees
+        username = emp.get('employee_name', 'Unknown')
+        total_hours = emp.get('total_work_hours', 0)
+        days_worked = emp.get('actual_work_days', 0)
+        
+        # Ensure numeric values
+        try:
+            total_hours = float(total_hours) if total_hours is not None else 0.0
+            days_worked = int(days_worked) if days_worked is not None else 0
+        except (ValueError, TypeError):
+            total_hours = 0.0
+            days_worked = 0
         
         # Calculate planned hours (assuming 8 hours per day standard)
         planned_hours = days_worked * 8
@@ -224,66 +231,40 @@ def create_employee_utilization_chart(employee_data):
     
     return fig, df
 
-def create_employee_progress_timeline(api_data):
-    """Create employee progress timeline"""
-    if not api_data:
-        return None
-    
-    # Mock employee daily progress
-    timeline_data = []
-    employees = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
-    dates = pd.date_range(start='2024-01-01', periods=30, freq='D')
-    
-    for emp in employees:
-        for date in dates:
-            # Generate realistic daily hours
-            base_hours = np.random.normal(8, 1.5)
-            hours = max(0, min(12, base_hours))
-            timeline_data.append({
-                'Employee': emp,
-                'Date': date,
-                'Hours': hours
-            })
-    
-    df = pd.DataFrame(timeline_data)
-    
-    fig = px.line(
-        df,
-        x='Date',
-        y='Hours',
-        color='Employee',
-        title='Employee Daily Hours Timeline (Last 30 Days)',
-        labels={'Hours': 'Daily Hours', 'Date': 'Date'}
-    )
-    
-    fig.update_layout(height=400)
-    return fig
-
-def create_employee_project_allocation(employee_data, estimates_data):
-    """Create employee project allocation analysis using real API data"""
-    if not employee_data or not employee_data.get('data'):
+def create_employee_project_allocation(employee_data):
+    """Create employee project allocation analysis using Supabase data"""
+    if employee_data.empty:
         return None, None
     
-    employees = employee_data['data']
-    
-    # Create allocation data from real employee data
+    # Create allocation data from Supabase results
     allocation_data = []
-    for emp in employees[:15]:  # Show top 15 employees
-        username = emp.get('username', 'Unknown')
-        clients = emp.get('clients', [])
-        total_hours = emp.get('total_hours', 0)
+    for _, emp in employee_data.head(15).iterrows():  # Show top 15 employees
+        username = emp.get('employee_name', 'Unknown')
+        clients = emp.get('client_list', [])
+        total_hours = emp.get('total_work_hours', 0)
+        
+        # Ensure numeric values and valid data
+        try:
+            total_hours = float(total_hours) if total_hours is not None else 0.0
+        except (ValueError, TypeError):
+            total_hours = 0.0
+        
+        # Ensure clients is a list
+        if not isinstance(clients, list):
+            clients = []
         
         if clients and total_hours > 0:
             # Distribute hours among clients
             hours_per_client = total_hours / len(clients) if clients else 0
             
             for client in clients:
-                allocation_data.append({
-                    'Employee': username,
-                    'Project': client,
-                    'Hours': hours_per_client,
-                    'Estimated': hours_per_client * 0.9  # Assume 10% over-estimation
-                })
+                if client and str(client).strip():  # Only add non-empty clients
+                    allocation_data.append({
+                        'Employee': username,
+                        'Project': str(client).strip(),
+                        'Hours': hours_per_client,
+                        'Estimated': hours_per_client * 0.9  # Assume 10% over-estimation
+                    })
     
     if not allocation_data:
         return None, None
@@ -301,247 +282,145 @@ def create_employee_project_allocation(employee_data, estimates_data):
     fig.update_layout(height=500)
     return fig, df
 
-def fetch_user_summary_data(user_id, period='daily', page=1, limit=1000):
-    """Fetch user summary data from API with pagination"""
-    try:
-        all_data = []
-        current_page = 1
-        total_pages = 1
-        
-        while current_page <= total_pages:
-            response = requests.get(
-                "http://16.171.230.164/api/user-summary-data",
-                params={
-                    "user_id": user_id,
-                    "period": period,
-                    "page": current_page,
-                    "limit": limit
-                },
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                page_data = response.json()
-                page_records = page_data.get("data", [])
-                
-                if page_records:  # If we got data
-                    all_data.extend(page_records)
-                
-                # Update pagination info
-                pagination = page_data.get("pagination", {})
-                total_pages = pagination.get("total_pages", 1)
-                current_page += 1
-                
-                # Safety check to prevent infinite loops
-                if current_page > 50:  # Max 50 pages (50,000 records)
-                    st.warning(f"⚠️ Reached maximum page limit (50) for {period} data. Some data may be missing.")
-                    break
-            else:
-                st.error(f"Failed to fetch {period} page {current_page}: {response.status_code}")
-                break
-        
-        if all_data:
-            return {
-                "data": all_data,
-                "pagination": {"total": len(all_data), "page": 1}
-            }
-        else:
-            return None
-            
-    except Exception as e:
-        st.error(f"Error fetching user summary data: {str(e)}")
-        return None
-
 def create_user_summary_charts(user_data, period='daily'):
     """Create charts for user summary data"""
-    if not user_data or not user_data.get('data'):
+    if user_data.empty:
         return None, None, None
     
-    df = pd.DataFrame(user_data['data'])
-    
-    # Convert date columns
-    if period == 'daily':
-        df['work_day'] = pd.to_datetime(df['work_day'], format='%d-%m-%Y')
-        date_col = 'work_day'
-    else:  # weekly
-        df['work_week'] = pd.to_datetime(df['work_week'], format='%d-%m-%Y')
-        date_col = 'work_week'
-    
-    # Chart 1: Hours over time
-    time_series = df.groupby(date_col)['hours'].sum().reset_index()
-    time_fig = px.line(
-        time_series, 
-        x=date_col, 
-        y='hours',
-        title=f'Total Hours by {period.capitalize()}',
-        labels={'hours': 'Hours', date_col: 'Date'}
-    )
-    time_fig.update_layout(height=400)
-    
-    # Chart 2: Hours by client
-    client_hours = df.groupby('client')['hours'].sum().reset_index()
-    client_hours = client_hours.sort_values('hours', ascending=False).head(10)
-    client_fig = px.bar(
-        client_hours,
-        x='client',
-        y='hours',
-        title=f'Hours by Client ({period.capitalize()})',
-        labels={'hours': 'Hours', 'client': 'Client'}
-    )
-    client_fig.update_layout(height=400, xaxis_tickangle=-45)
-    
-    # Chart 3: Hours by task
-    task_hours = df.groupby('task')['hours'].sum().reset_index()
-    task_hours = task_hours.sort_values('hours', ascending=False).head(10)
-    task_fig = px.pie(
-        task_hours,
-        values='hours',
-        names='task',
-        title=f'Hours by Task ({period.capitalize()})'
-    )
-    task_fig.update_layout(height=400)
-    
-    return time_fig, client_fig, task_fig
+    try:
+        # Convert date columns
+        if period == 'daily':
+            if 'work_date' in user_data.columns:
+                user_data['work_date'] = pd.to_datetime(user_data['work_date'], errors='coerce')
+                date_col = 'work_date'
+            else:
+                return None, None, None
+        else:  # weekly
+            if 'work_week' in user_data.columns:
+                user_data['work_week'] = pd.to_datetime(user_data['work_week'], errors='coerce')
+                date_col = 'work_week'
+            else:
+                return None, None, None
+        
+        # Ensure hours_worked is numeric
+        if 'hours_worked' in user_data.columns:
+            user_data['hours_worked'] = pd.to_numeric(user_data['hours_worked'], errors='coerce').fillna(0)
+        else:
+            return None, None, None
+        
+        # Chart 1: Hours over time
+        time_series = user_data.groupby(date_col)['hours_worked'].sum().reset_index()
+        time_series = time_series.dropna()  # Remove any NaN values
+        
+        if not time_series.empty:
+            time_fig = px.line(
+                time_series, 
+                x=date_col, 
+                y='hours_worked',
+                title=f'Total Hours by {period.capitalize()}',
+                labels={'hours_worked': 'Hours', date_col: 'Date'}
+            )
+            time_fig.update_layout(height=400)
+        else:
+            time_fig = None
+        
+        # Chart 2: Hours by client
+        if 'client_name' in user_data.columns:
+            client_hours = user_data.groupby('client_name')['hours_worked'].sum().reset_index()
+            client_hours = client_hours.sort_values('hours_worked', ascending=False).head(10)
+            client_hours = client_hours.dropna()
+            
+            if not client_hours.empty:
+                client_fig = px.bar(
+                    client_hours,
+                    x='client_name',
+                    y='hours_worked',
+                    title=f'Hours by Client ({period.capitalize()})',
+                    labels={'hours_worked': 'Hours', 'client_name': 'Client'}
+                )
+                client_fig.update_layout(height=400, xaxis_tickangle=-45)
+            else:
+                client_fig = None
+        else:
+            client_fig = None
+        
+        # Chart 3: Hours by task
+        if 'task_name' in user_data.columns:
+            task_hours = user_data.groupby('task_name')['hours_worked'].sum().reset_index()
+            task_hours = task_hours.sort_values('hours_worked', ascending=False).head(10)
+            task_hours = task_hours.dropna()
+            
+            if not task_hours.empty:
+                task_fig = px.pie(
+                    task_hours,
+                    values='hours_worked',
+                    names='task_name',
+                    title=f'Hours by Task ({period.capitalize()})'
+                )
+                task_fig.update_layout(height=400)
+            else:
+                task_fig = None
+        else:
+            task_fig = None
+        
+        return time_fig, client_fig, task_fig
+        
+    except Exception as e:
+        st.error(f"Error creating user summary charts: {str(e)}")
+        return None, None, None
 
-def display_employee_kpis(employee_data, estimates_data):
-    """Display employee-level KPIs using real API data"""
+def display_employee_kpis(kpis):
+    """Display employee-level KPIs using Supabase data"""
     col1, col2, col3, col4, col5 = st.columns(5)
     
-    # Calculate metrics from real employee data
-    if employee_data and employee_data.get('data'):
-        employees = employee_data['data']
-        total_employees = len(employees)
-        
-        # Calculate total hours from all employees
-        total_hours = sum(emp.get('total_hours', 0) for emp in employees)
-        avg_hours_per_employee = total_hours / max(1, total_employees)
-        
-        # Calculate average utilization (assuming 8 hours per day as standard)
-        total_days_worked = sum(emp.get('days_worked', 0) for emp in employees)
-        standard_hours = total_days_worked * 8  # 8 hours per day standard
-        avg_utilization = (total_hours / max(1, standard_hours)) * 100 if standard_hours > 0 else 0
-        
-        # Calculate team productivity based on hours consistency
-        daily_averages = [emp.get('daily_average', 0) for emp in employees if emp.get('daily_average', 0) > 0]
-        if daily_averages:
-            # Productivity based on how close daily averages are to 8 hours (optimal)
-            productivity_scores = [min(100, (avg / 8) * 100) for avg in daily_averages]
-            team_productivity = sum(productivity_scores) / len(productivity_scores)
-        else:
-            team_productivity = 0
-        
-        # Calculate overtime percentage (hours over 8 per day)
-        overtime_hours = sum(max(0, emp.get('daily_average', 0) - 8) * emp.get('days_worked', 0) for emp in employees)
-        overtime_pct = (overtime_hours / max(1, total_hours)) * 100
-        
-        # Calculate previous period for delta (simplified - using 10% variation)
-        prev_utilization = avg_utilization * 0.9
-        prev_productivity = team_productivity * 0.95
-        prev_overtime = overtime_pct * 1.1
-        
-    else:
-        # Fallback to demo data if no real data
-        total_employees = 0
-        avg_hours_per_employee = 0
-        avg_utilization = 0
-        team_productivity = 0
-        overtime_pct = 0
-        prev_utilization = 0
-        prev_productivity = 0
-        prev_overtime = 0
-    
     with col1:
-        st.metric("Active Employees", total_employees)
+        st.metric("Active Employees", kpis.get('total_employees', 0))
     
     with col2:
-        delta_utilization = avg_utilization - prev_utilization
-        st.metric("Avg Utilization", f"{avg_utilization:.1f}%", 
-                 delta=f"{delta_utilization:+.1f}%" if delta_utilization != 0 else None)
+        st.metric("Avg Utilization", f"{kpis.get('avg_utilization', 0):.1f}%")
     
     with col3:
-        st.metric("Avg Hours/Employee", f"{avg_hours_per_employee:.1f}h")
+        st.metric("Avg Hours/Employee", f"{kpis.get('avg_hours_per_employee', 0):.1f}h")
     
     with col4:
-        delta_productivity = team_productivity - prev_productivity
-        st.metric("Team Productivity", f"{team_productivity:.1f}/100", 
-                 delta=f"{delta_productivity:+.1f}" if delta_productivity != 0 else None)
+        st.metric("Team Productivity", f"{kpis.get('team_productivity', 0):.1f}/100")
     
     with col5:
-        delta_overtime = overtime_pct - prev_overtime
-        st.metric("Overtime %", f"{overtime_pct:.1f}%", 
-                 delta=f"{delta_overtime:+.1f}%" if delta_overtime != 0 else None)
+        st.metric("Overtime %", f"{kpis.get('overtime_pct', 0):.1f}%")
 
 def main():
-    """Main Employee Analytics Dashboard"""
+    """Main Employee Analytics Dashboard with Supabase Integration"""
     
     # Header
     st.markdown("""
     <div class="employee-header">
         <h1>👥 Employee Analytics Dashboard</h1>
-        <p>Comprehensive Employee Performance, Productivity & Progress Tracking</p>
+        <p>Comprehensive Employee Performance, Productivity & Progress Tracking using Supabase</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Fetch employee data
-    with st.spinner("Loading employee analytics..."):
-        api_data, estimates_data, progress_data = get_employee_data()
+  
     
-    # Fetch employee listing data for KPIs
-    employee_kpi_data = None
-    try:
-        with st.spinner("Loading employee data for KPIs..."):
-            all_employees = []
-            page = 1
-            limit = 20
+    # Fetch employee data using Supabase with timeout
+    with st.spinner("Loading employee analytics from Supabase... (This may take a moment)"):
+        try:
+            import time
+            start_time = time.time()
+            employee_data, kpis, progress_data = get_employee_data_supabase_integrated()
+            end_time = time.time()
             
-            while True:
-                response = requests.get(
-                    "http://16.171.230.164/api/user-listing-data",
-                    params={
-                        "page": page,
-                        "limit": limit,
-                        "sort_field": "username", 
-                        "sort_order": "asc"
-                    },
-                    timeout=50
-                )
-                
-                if response.status_code == 200:
-                    page_data = response.json()
-                    page_employees = page_data.get("data", [])
-                    
-                    if page_employees:
-                        all_employees.extend(page_employees)
-                    
-                    pagination = page_data.get("pagination", {})
-                    total_pages = pagination.get("total_pages", 1)
-                    
-                    if page >= total_pages or not page_employees:
-                        break
-                    page += 1
-                    
-                    # Safety check
-                    if page > 20:  # Limit for KPI loading
-                        break
-                else:
-                    break
-            
-            if all_employees:
-                employee_kpi_data = {
-                    "data": all_employees,
-                    "pagination": {"total": len(all_employees), "page": 1}
-                }
-    except Exception as e:
-        st.warning(f"Could not load employee data for KPIs: {str(e)}")
+            # Show loading time
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+            employee_data, kpis, progress_data = pd.DataFrame(), {}, None
     
     # Display KPIs
     st.subheader("📊 Employee Performance KPIs")
-    display_employee_kpis(employee_kpi_data, estimates_data)
+    display_employee_kpis(kpis)
     
     # Main Analytics Tabs
     tab1, tab4 = st.tabs([
         "🎯 Performance Overview",
-      
         "👤 Individual Insights"
     ])
     
@@ -552,19 +431,23 @@ def main():
         
         with col1:
             # Employee utilization chart
-            util_chart, util_df = create_employee_utilization_chart(employee_kpi_data)
+            util_chart, util_df = create_employee_utilization_chart(employee_data)
             if util_chart:
                 st.plotly_chart(util_chart, use_container_width=True)
+            else:
+                st.info("No utilization data available")
         
         with col2:
             # Project allocation
-            allocation_chart, allocation_df = create_employee_project_allocation(employee_kpi_data, estimates_data)
+            allocation_chart, allocation_df = create_employee_project_allocation(employee_data)
             if allocation_chart:
                 st.plotly_chart(allocation_chart, use_container_width=True)
+            else:
+                st.info("No project allocation data available")
         
         # Performance summary table
         st.subheader("Performance Summary")
-        if util_df is not None:
+        if util_df is not None and not util_df.empty:
             # Add performance categories
             def categorize_performance(utilization):
                 if utilization >= 95:
@@ -587,125 +470,53 @@ def main():
             
             styled_df = util_df.style.applymap(style_performance, subset=['Performance'])
             st.dataframe(styled_df, use_container_width=True)
-    
-    
+        else:
+            st.info("No performance data available to display")
     
     with tab4:
         st.subheader("Individual Employee Insights")
 
-        # Fetch employee list from API with pagination
-        employee_data = None
-        employee_names = []
-        employee_user_ids = {}  # Map usernames to user_ids
-        all_employees = []  # Store all employees from all pages
-        
+        # Get employee list from Supabase
         try:
-            page = 1
-            limit = 50  # Fetch 50 employees per page
-            total_pages = 1
+            supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
+            supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
             
-            with st.spinner("Loading employee data..."):
-                while page <= total_pages:
-                    response = requests.get(
-                        "http://16.171.230.164/api/user-listing-data",
-                        params={
-                            "page": page,
-                            "limit": limit,
-                            "sort_field": "username", 
-                            "sort_order": "asc"
-                        },
-                        timeout=10
-                    )
-                    
-                    if response.status_code == 200:
-                        page_data = response.json()
-                        page_employees = page_data.get("data", [])
-                        
-                        if page_employees:  # If we got data
-                            all_employees.extend(page_employees)
-                        
-                        # Update pagination info
-                        pagination = page_data.get("pagination", {})
-                        total_pages = pagination.get("total_pages", 1)
-                        page += 1
-                        
-                        # Safety check to prevent infinite loops
-                        if page > 100:  # Max 100 pages (5000 employees)
-                            st.warning("⚠️ Reached maximum page limit (100). Some data may be missing.")
-                            break
-                    else:
-                        st.error(f"Failed to fetch page {page}: {response.status_code}")
-                        break
+            handler = get_supabase_employee_analytics_handler(supabase_url, supabase_key)
+            employee_list = handler.get_employee_list()
+            
+            if not employee_list.empty:
+                # Filter out any None or empty usernames
+                employee_list = employee_list.dropna(subset=['username'])
+                employee_list = employee_list[employee_list['username'].str.strip() != '']
                 
-                # Process all collected employee data
-                if all_employees:
-                    employee_data = {
-                        "data": all_employees,
-                        "pagination": {"total": len(all_employees), "page": 1}
-                    }
-                    employee_names = [emp["username"] for emp in all_employees]
-                    employee_user_ids = {emp["username"]: emp.get("user_id", 503759) for emp in all_employees}
+                # Filter out specific users if needed (optional)
+                # employee_list = employee_list[~employee_list['username'].str.contains('ann@ddmac', case=False, na=False)]
+                
+                # Sort alphabetically for better user experience
+                employee_list = employee_list.sort_values('username')
+                
+                if not employee_list.empty:
+                    employee_names = employee_list['username'].tolist()
+                    employee_user_ids = dict(zip(employee_list['username'], employee_list['user_id']))
                 else:
-                    employee_names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
-                    # Create mock employee data structure with user_ids
-                    demo_user_ids = [503759, 503760, 503761, 503762, 503763]
-                    employee_data = {
-                        "data": [
-                            {
-                                "username": name,
-                                "user_id": demo_user_ids[i],
-                                "total_hours": np.random.uniform(120, 180),
-                                "days_worked": np.random.randint(15, 25),
-                                "daily_average": np.random.uniform(6, 9),
-                                "clients": [f"Client {chr(65+i)}" for i in range(np.random.randint(1, 4))]
-                            } for i, name in enumerate(employee_names)
-                        ],
-                        "pagination": {"total": len(employee_names), "page": 1}
-                    }
-                    # Create user_id mapping
-                    employee_user_ids = {name: demo_user_ids[i] for i, name in enumerate(employee_names)}
-        except requests.exceptions.Timeout:
-            st.warning("⚠️ API request timed out. Using demo data.")
-            employee_names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
-            demo_user_ids = [503759, 503760, 503761, 503762, 503763]
-            employee_data = {
-                "data": [
-                    {
-                        "username": name,
-                        "user_id": demo_user_ids[i],
-                        "total_hours": np.random.uniform(120, 180),
-                        "days_worked": np.random.randint(15, 25),
-                        "daily_average": np.random.uniform(6, 9),
-                        "clients": [f"Client {chr(65+i)}" for i in range(np.random.randint(1, 4))]
-                    } for i, name in enumerate(employee_names)
-                ],
-                "pagination": {"total": len(employee_names), "page": 1}
-            }
-            employee_user_ids = {name: demo_user_ids[i] for i, name in enumerate(employee_names)}
+                    employee_names = ['No employees found']
+                    employee_user_ids = {}
+            else:
+                employee_names = ['No employees found']
+                employee_user_ids = {}
+                
         except Exception as e:
-            st.warning(f"⚠️ Error connecting to API: {str(e)}. Using demo data.")
-            employee_names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
-            demo_user_ids = [503759, 503760, 503761, 503762, 503763]
-            employee_data = {
-                "data": [
-                    {
-                        "username": name,
-                        "user_id": demo_user_ids[i],
-                        "total_hours": np.random.uniform(120, 180),
-                        "days_worked": np.random.randint(15, 25),
-                        "daily_average": np.random.uniform(6, 9),
-                        "clients": [f"Client {chr(65+i)}" for i in range(np.random.randint(1, 4))]
-                    } for i, name in enumerate(employee_names)
-                ],
-                "pagination": {"total": len(employee_names), "page": 1}
-            }
-            employee_user_ids = {name: demo_user_ids[i] for i, name in enumerate(employee_names)}
+            st.warning(f"Could not load employee list: {str(e)}")
+            employee_names = ['Demo Employee']
+            employee_user_ids = {'Demo Employee': 503759}
+        
         # Employee selector
         if employee_names:
             selected_employee = st.selectbox(
                 "Select Employee",
                 employee_names,
-                index=0  # Default to first employee
+                index=0,  # Default to first employee
+                key="employee_selector"  # Add key to prevent reset
             )
         else:
             st.error("No employee data available")
@@ -726,51 +537,104 @@ def main():
                     horizontal=True
                 )
             
-            # Fetch user summary data
-            with st.spinner(f"Loading {selected_employee}'s {period} data..."):
-                user_summary_data = fetch_user_summary_data(user_id, period)
+            # Fetch user summary data using Supabase with progress indicator
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                status_text.text(f"Loading {selected_employee}'s {period} data...")
+                progress_bar.progress(20)
+                
+                user_summary_data = get_employee_detailed_data_supabase(
+                    user_id, period, 
+                    supabase_url=supabase_url,
+                    supabase_key=supabase_key
+                )
+                
+                progress_bar.progress(80)
+                status_text.text("Processing data...")
+                
+                progress_bar.progress(100)
+                status_text.text("✅ Data loaded successfully!")
+                
+                # Clear progress indicators after a short delay
+                import time
+                time.sleep(0.5)
+                progress_bar.empty()
+                status_text.empty()
+                
+            except Exception as e:
+                st.error(f"Error loading data: {str(e)}")
+                user_summary_data = pd.DataFrame()
+                progress_bar.empty()
+                status_text.empty()
             
             # Individual employee detailed view
             col1, col2 = st.columns(2)
             
             with col1:
                 # Individual productivity gauge
-                emp_index = employee_names.index(selected_employee)
-                # Use a more realistic productivity score distribution
-                productivity_scores = [92, 88, 95, 78, 91, 85, 90, 87, 93, 89]
-                emp_score = productivity_scores[emp_index % len(productivity_scores)]
+                try:
+                    productivity_data = handler.get_employee_productivity_metrics(user_id)
+                    
+                    if not productivity_data.empty:
+                        productivity_score = productivity_data.iloc[0]['productivity_score']
+                    else:
+                        productivity_score = 85  # Default score
+                except:
+                    productivity_score = 85
                 
-                individual_gauge = create_employee_productivity_gauge(emp_score, selected_employee)
+                individual_gauge = create_employee_productivity_gauge(productivity_score, selected_employee)
                 st.plotly_chart(individual_gauge, use_container_width=True, key=f"emp_gauge_{selected_employee.replace(' ', '_')}")
             
             with col2:
                 # Individual metrics
                 st.subheader(f"📊 {selected_employee} Metrics")
                 
-                # Get employee data from API response
-                emp_data = next((emp for emp in employee_data.get("data", []) if emp["username"] == selected_employee), None)
-                
-                if emp_data:
-                    # Calculate metrics from API data
-                    total_hours = emp_data['total_hours']
-                    days_worked = emp_data['days_worked'] 
-                    daily_avg = emp_data['daily_average']
-                    num_projects = len(emp_data['clients'])
+                # Get employee data from Supabase
+                try:
+                    emp_summary = handler.get_employee_summary(user_id)
                     
-                    st.metric("Total Hours", f"{total_hours:.1f}h")
-                    st.metric("Days Worked", days_worked)
-                    st.metric("Daily Average", f"{daily_avg:.1f}h")
-                    st.metric("Active Projects", num_projects)
-                else:
-                    # Fallback metrics if no specific employee data
-                    st.metric("Total Hours", "N/A")
-                    st.metric("Days Worked", "N/A")
-                    st.metric("Daily Average", "N/A")
-                    st.metric("Active Projects", "N/A")
-                    st.info("No detailed data available for this employee")
+                    if not emp_summary.empty:
+                        emp_data = emp_summary.iloc[0]
+                        
+                        # Safely extract values with defaults
+                        total_hours = emp_data.get('total_work_hours', 0)
+                        days_worked = emp_data.get('actual_work_days', 0)
+                        daily_avg = emp_data.get('average_daily_hours', 0)
+                        client_list = emp_data.get('client_list', [])
+                        
+                        # Ensure numeric values
+                        try:
+                            total_hours = float(total_hours) if total_hours is not None else 0.0
+                            days_worked = int(days_worked) if days_worked is not None else 0
+                            daily_avg = float(daily_avg) if daily_avg is not None else 0.0
+                        except (ValueError, TypeError):
+                            total_hours = 0.0
+                            days_worked = 0
+                            daily_avg = 0.0
+                        
+                        # Count projects safely
+                        if isinstance(client_list, list) and client_list:
+                            num_projects = len([c for c in client_list if c and str(c).strip()])
+                        else:
+                            num_projects = 0
+                        
+                        st.metric("Total Hours", f"{total_hours:.1f}h")
+                        st.metric("Days Worked", days_worked)
+                        st.metric("Daily Average", f"{daily_avg:.1f}h")
+                        st.metric("Active Projects", num_projects)
+                    else:
+                        st.metric("Total Hours", "N/A")
+                        st.metric("Days Worked", "N/A")
+                        st.metric("Daily Average", "N/A")
+                        st.metric("Active Projects", "N/A")
+                        st.info("No detailed data available for this employee")
+                except Exception as e:
+                    st.error(f"Error loading employee metrics: {str(e)}")
             
             # User Summary Data Charts
-            if user_summary_data and user_summary_data.get('data'):
+            if not user_summary_data.empty:
                 st.subheader(f"📈 {selected_employee} - {period.capitalize()} Work Summary")
                 
                 # Create charts from user summary data
@@ -795,10 +659,9 @@ def main():
                 
                 # Summary statistics
                 st.subheader("📊 Summary Statistics")
-                df = pd.DataFrame(user_summary_data['data'])
-                total_hours = df['hours'].sum()
-                unique_clients = df['client'].nunique()
-                unique_tasks = df['task'].nunique()
+                total_hours = user_summary_data['hours_worked'].sum()
+                unique_clients = user_summary_data['client_name'].nunique()
+                unique_tasks = user_summary_data['task_name'].nunique()
                 
                 col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
                 with col_stat1:
@@ -808,36 +671,46 @@ def main():
                 with col_stat3:
                     st.metric("Unique Tasks", unique_tasks)
                 with col_stat4:
-                    avg_hours = total_hours / len(df) if len(df) > 0 else 0
+                    avg_hours = total_hours / len(user_summary_data) if len(user_summary_data) > 0 else 0
                     st.metric(f"Avg Hours per Entry", f"{avg_hours:.1f}")
                 
                 # Data table
                 st.subheader("📋 Raw Data")
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(user_summary_data, use_container_width=True)
             else:
                 st.warning(f"No {period} data available for {selected_employee}")
             
             # Individual project breakdown
             st.subheader(f"Project Breakdown - {selected_employee}")
             
-            if emp_data and emp_data.get('clients'):
-                # Create dataframe from client list
-                projects_df = pd.DataFrame({
-                    'Project': emp_data['clients'],
-                    'Status': ['Active'] * len(emp_data['clients']),
-                    'Hours Allocated': [np.random.uniform(20, 60) for _ in emp_data['clients']]
-                })
-                st.dataframe(projects_df, use_container_width=True)
-            else:
-                # Show demo project data
-                demo_projects = [
-                    {'Project': 'TechCorp Mobile App', 'Status': 'Active', 'Hours Allocated': 45.5},
-                    {'Project': 'GlobalSoft Dashboard', 'Status': 'Active', 'Hours Allocated': 32.0},
-                    {'Project': 'StartupX Website', 'Status': 'In Progress', 'Hours Allocated': 28.5}
-                ]
-                projects_df = pd.DataFrame(demo_projects)
-                st.dataframe(projects_df, use_container_width=True)
-                st.info("💡 Showing demo project data - connect to API for real project information")
+            try:
+                emp_summary = handler.get_employee_summary(user_id)
+                
+                if not emp_summary.empty:
+                    emp_data = emp_summary.iloc[0]
+                    client_list = emp_data.get('client_list', [])
+                    
+                    # Ensure client_list is a valid list
+                    if isinstance(client_list, list) and client_list:
+                        # Filter out empty or None clients
+                        valid_clients = [c for c in client_list if c and str(c).strip()]
+                        
+                        if valid_clients:
+                            # Create dataframe from client list
+                            projects_df = pd.DataFrame({
+                                'Project': valid_clients,
+                                'Status': ['Active'] * len(valid_clients),
+                                'Hours Allocated': [np.random.uniform(20, 60) for _ in valid_clients]
+                            })
+                            st.dataframe(projects_df, use_container_width=True)
+                        else:
+                            st.info("No valid project data available for this employee")
+                    else:
+                        st.info("No project data available for this employee")
+                else:
+                    st.info("No project data available for this employee")
+            except Exception as e:
+                st.error(f"Error loading project data: {str(e)}")
         else:
             st.warning("Please select an employee to view detailed analytics")
 

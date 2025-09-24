@@ -373,15 +373,22 @@ class SupabaseEmployeeAnalyticsHandler:
                 return pd.DataFrame()
             
             # Group by week
-            daily_data['work_date'] = pd.to_datetime(daily_data['work_date'])
-            daily_data['work_week'] = daily_data['work_date'].dt.to_period('W').dt.start
+            daily_data['work_date'] = pd.to_datetime(daily_data['work_date'], errors='coerce')
+            # Remove any rows with invalid dates
+            daily_data = daily_data.dropna(subset=['work_date'])
+            
+            if daily_data.empty:
+                return pd.DataFrame()
+            
+            # Convert to week start date using a more reliable method
+            daily_data['work_week'] = (daily_data['work_date'] - pd.to_timedelta(daily_data['work_date'].dt.dayofweek, unit='D')).dt.date
             
             weekly_data = daily_data.groupby(['work_week', 'client_name', 'task_name', 'job_code']).agg({
                 'hours_worked': 'sum',
                 'custom_field_items': lambda x: list(set([item for sublist in x for item in sublist]))
             }).reset_index()
             
-            weekly_data['work_week'] = weekly_data['work_week'].dt.date
+            # work_week is already a date object, no need to convert again
             weekly_data = weekly_data.rename(columns={'work_week': 'work_week'})
             
             return weekly_data

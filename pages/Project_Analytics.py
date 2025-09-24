@@ -1000,7 +1000,7 @@ def main():
                                         detailed_df['date_dt'] = pd.to_datetime(detailed_df[date_col], errors='coerce')
                                         if not detailed_df['date_dt'].isna().all():
                                             # Group by week
-                                            detailed_df['week_start'] = detailed_df['date_dt'].dt.to_period('W').dt.start_time
+                                            detailed_df['week_start'] = (detailed_df['date_dt'] - pd.to_timedelta(detailed_df['date_dt'].dt.dayofweek, unit='D'))
                                             weekly_data = detailed_df.groupby('week_start').agg({
                                                 'total_duration': 'sum'
                                             }).reset_index()
@@ -1288,7 +1288,7 @@ def main():
                                 users_df['date_dt'] = pd.to_datetime(users_df[date_col], errors='coerce')
                                 if not users_df['date_dt'].isna().all():
                                     # Group by week
-                                    users_df['week_start'] = users_df['date_dt'].dt.to_period('W').dt.start_time
+                                    users_df['week_start'] = (users_df['date_dt'] - pd.to_timedelta(users_df['date_dt'].dt.dayofweek, unit='D'))
                                     weekly_data = users_df.groupby('week_start').agg({
                                         'total_duration': 'sum',
                                         'username': 'first'
