@@ -28,6 +28,78 @@ from utils import (
     get_budget_alerts
 )
 
+def calculate_efficiency_score_with_accubid(project_name, actual_hours, avg_hours_per_day):
+    """
+    Calculate efficiency score using Accubid breakdown data
+    Filters by task name "EVERYTHING" to get overall project estimates
+    
+    Args:
+        project_name (str): Name of the project
+        actual_hours (float): Actual hours worked
+        avg_hours_per_day (float): Average hours per day
+        
+    Returns:
+        float: Efficiency score (0-100)
+    """
+    try:
+        # Initialize Supabase connection
+        supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
+        supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+        supabase = create_client(supabase_url, supabase_key)
+        
+        # Get Accubid breakdown data for the project, filtered by task name "EVERYTHING"
+        response = supabase.table('accubid_breakdowns').select('*').eq('job_name', project_name).eq('Task_name', 'EVERYTHING').execute()
+        
+        if response.data:
+            # Calculate total estimated hours from Accubid breakdown (filtered by "EVERYTHING" task)
+            total_estimated_hours = sum(float(item.get('time_estimate', 0)) for item in response.data if item.get('time_estimate'))
+            
+            if total_estimated_hours > 0:
+                # Calculate efficiency based on actual vs estimated hours
+                # Efficiency = (Estimated Hours / Actual Hours) * 100
+                # Higher efficiency means we're using fewer hours than estimated
+                efficiency_score = min(100, (total_estimated_hours / actual_hours) * 100) if actual_hours > 0 else 0
+                
+                # Adjust for daily productivity (bonus for consistent daily work)
+                if avg_hours_per_day >= 6:  # Good daily productivity
+                    efficiency_score = min(100, efficiency_score * 1.1)
+                elif avg_hours_per_day < 4:  # Low daily productivity
+                    efficiency_score = max(0, efficiency_score * 0.9)
+                
+                return round(efficiency_score, 1)
+            else:
+                # No time estimates available, use fallback calculation
+                return calculate_fallback_efficiency_score(actual_hours, avg_hours_per_day)
+        else:
+            # No Accubid data available, use fallback calculation
+            return calculate_fallback_efficiency_score(actual_hours, avg_hours_per_day)
+            
+    except Exception as e:
+        st.warning(f"Error calculating efficiency score: {str(e)}")
+        # Use fallback calculation
+        return calculate_fallback_efficiency_score(actual_hours, avg_hours_per_day)
+
+def calculate_fallback_efficiency_score(actual_hours, avg_hours_per_day):
+    """
+    Fallback efficiency calculation when Accubid data is not available
+    
+    Args:
+        actual_hours (float): Actual hours worked
+        avg_hours_per_day (float): Average hours per day
+        
+    Returns:
+        float: Fallback efficiency score (0-100)
+    """
+    # Base efficiency on daily productivity
+    if avg_hours_per_day >= 8:
+        return min(100, (avg_hours_per_day / 8) * 100)
+    elif avg_hours_per_day >= 6:
+        return min(100, (avg_hours_per_day / 6) * 85)
+    elif avg_hours_per_day >= 4:
+        return min(100, (avg_hours_per_day / 4) * 70)
+    else:
+        return max(0, (avg_hours_per_day / 4) * 50)
+
 # Set page configuration
 st.set_page_config(
     page_title="Project Analytics - DDMac",
@@ -799,22 +871,91 @@ def main():
                                 total_duration = 0
                             days_worked = next((item.get('days_worked', 0) for item in client_time_summary_client_data['data'] if item.get('jobcode_id') == jobcode_id), 0)
                             avg_hours = total_duration / days_worked if days_worked > 0 else 0
-                            st.metric("Avg Hours/Day", f"{avg_hours:.1f}")
+                            
+                            # Calculate efficiency score using Accubid breakdown data
+                            efficiency_score = calculate_efficiency_score_with_accubid(selected_project, total_duration, avg_hours)
+                            
+                            # Display efficiency score with color coding
+                            if efficiency_score >= 80:
+                                st.metric("Efficiency Score", f"{efficiency_score:.1f}%", delta="Excellent")
+                            elif efficiency_score >= 60:
+                                st.metric("Efficiency Score", f"{efficiency_score:.1f}%", delta="Good")
+                            elif efficiency_score >= 40:
+                                st.metric("Efficiency Score", f"{efficiency_score:.1f}%", delta="Average")
+                            else:
+                                st.metric("Efficiency Score", f"{efficiency_score:.1f}%", delta="Needs Improvement")
                         
                         # Show project timeline
                         st.subheader("📈 Project Timeline")
                         timeline_data = {
-                            'Metric': ['Total Duration', 'Days Worked', 'Average Hours/Day', 'Efficiency Score'],
+                            'Metric': ['Total Duration', 'Days Worked', 'Average Hours/Day'],
                             'Value': [
                                 f"{total_duration:.1f} hours",
                                 f"{days_worked:.0f} days",
-                                f"{avg_hours:.1f} hours",
-                                f"{(avg_hours/8*100):.1f}%" if avg_hours > 0 else "0%"
+                                f"{avg_hours:.1f} hours"
+                                #f"{efficiency_score:.1f}%" if efficiency_score > 0 else "0%"
                             ]
                         }
                         
                         timeline_df = pd.DataFrame(timeline_data)
                         st.dataframe(timeline_df, use_container_width=True, hide_index=True)
+                        
+                        # Add efficiency gauge visualization
+                        st.subheader("🎯 Efficiency Analysis")
+                        col_eff1, col_eff2 = st.columns([1, 2])
+                        
+                        with col_eff1:
+                            # Create efficiency gauge
+                            fig = go.Figure(go.Indicator(
+                                mode = "gauge+number+delta",
+                                value = efficiency_score,
+                                domain = {'x': [0, 1], 'y': [0, 1]},
+                                title = {'text': "Efficiency Score"},
+                                delta = {'reference': 70},
+                                gauge = {
+                                    'axis': {'range': [None, 100]},
+                                    'bar': {'color': "darkblue"},
+                                    'steps': [
+                                        {'range': [0, 40], 'color': "lightgray"},
+                                        {'range': [40, 60], 'color': "yellow"},
+                                        {'range': [60, 80], 'color': "lightgreen"},
+                                        {'range': [80, 100], 'color': "green"}
+                                    ],
+                                    'threshold': {
+                                        'line': {'color': "red", 'width': 4},
+                                        'thickness': 0.75,
+                                        'value': 90
+                                    }
+                                }
+                            ))
+                            
+                            fig.update_layout(height=300, showlegend=False)
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        with col_eff2:
+                            # Show efficiency breakdown
+                            st.markdown("**Efficiency Breakdown:**")
+                            
+                            # Get Accubid data for detailed breakdown
+                            try:
+                                supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
+                                supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+                                supabase = create_client(supabase_url, supabase_key)
+                                
+                                response = supabase.table('accubid_breakdowns').select('*').eq('job_name', selected_project).eq('Task_name', 'EVERYTHING').execute()
+                                
+                                if response.data:
+                                    total_estimated = sum(float(item.get('time_estimate', 0)) for item in response.data if item.get('time_estimate'))
+                                    st.metric("Estimated Hours", f"{total_estimated:.1f}")
+                                    st.metric("Actual Hours", f"{total_duration:.1f}")
+                                    
+                                    if total_estimated > 0:
+                                        variance = ((total_duration - total_estimated) / total_estimated) * 100
+                                        st.metric("Variance", f"{variance:+.1f}%")
+                                else:
+                                    st.info("No Accubid estimates available for this project (filtered by task 'EVERYTHING')")
+                            except Exception as e:
+                                st.warning(f"Could not load Accubid data: {str(e)}")
                 
                 elif view_type == "👥 User Details":
                     # Show user details for this project
