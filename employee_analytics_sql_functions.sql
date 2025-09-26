@@ -51,11 +51,11 @@ BEGIN
             COALESCE(u.display_name, CONCAT(u.first_name, ' ', u.last_name)) as full_name,
             v_start_date as work_start_date,
             v_end_date as work_end_date,
-            COALESCE(SUM(t.duration) / 3600.0, 0)::NUMERIC as total_work_hours,
+            ROUND(COALESCE(SUM(t.duration) / 3600.0, 0), 2)::NUMERIC as total_work_hours,
             COUNT(DISTINCT t.date)::BIGINT as actual_work_days,
             CASE 
                 WHEN COUNT(DISTINCT t.date) > 0 THEN 
-                    (COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date))::NUMERIC
+                    ROUND((COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date)), 2)::NUMERIC
                 ELSE 0::NUMERIC
             END as average_daily_hours
         FROM users u
@@ -482,12 +482,12 @@ BEGIN
     RETURN QUERY
     SELECT 
         j.name as client_name,
-        COALESCE(SUM(t.duration) / 3600.0, 0)::NUMERIC as total_hours,
-        COALESCE(SUM(CASE WHEN j.billable THEN t.duration ELSE 0 END) / 3600.0, 0)::NUMERIC as billable_hours,
+        ROUND(COALESCE(SUM(t.duration) / 3600.0, 0), 2)::NUMERIC as total_hours,
+        ROUND(COALESCE(SUM(CASE WHEN j.billable THEN t.duration ELSE 0 END) / 3600.0, 0), 2)::NUMERIC as billable_hours,
         COUNT(DISTINCT t.date)::BIGINT as days_worked,
         CASE 
             WHEN COUNT(DISTINCT t.date) > 0 THEN 
-                (COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date))::NUMERIC
+                ROUND((COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date)), 2)::NUMERIC
             ELSE 0::NUMERIC
         END as average_hours_per_day,
         CASE 

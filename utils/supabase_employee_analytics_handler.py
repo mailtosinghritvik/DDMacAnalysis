@@ -55,7 +55,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_all_employees_summary(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get summary for all employees using Supabase (optimized for performance)
+        Get summary for all employees using Supabase function (optimized for performance)
         
         Args:
             start_date (str): Start date (YYYY-MM-DD)
@@ -68,108 +68,28 @@ class SupabaseEmployeeAnalyticsHandler:
             return pd.DataFrame()
         
         try:
-            # Get all users (limit to active users only for performance)
-            users_response = self.supabase.table('users').select('id, username, first_name, last_name, display_name').eq('active', True).execute()
-            users_data = users_response.data
+            # Use the comprehensive Supabase function instead of complex Python queries
+            response = self.supabase.rpc(
+                'get_comprehensive_employee_analytics',
+                {
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if not users_data:
+            if not response.data:
                 return pd.DataFrame()
             
-            # Get all timesheet data in one query (much faster)
-            timesheet_query = self.supabase.table('timesheets').select('user_id, duration, date, jobcode_id')
+            # Convert the response to DataFrame
+            df = pd.DataFrame(response.data)
             
-            if start_date:
-                timesheet_query = timesheet_query.gte('date', start_date)
-            if end_date:
-                timesheet_query = timesheet_query.lte('date', end_date)
+            # Convert arrays to lists for better compatibility
+            if 'client_list' in df.columns:
+                df['client_list'] = df['client_list'].apply(lambda x: x if isinstance(x, list) else [])
+            if 'task_list' in df.columns:
+                df['task_list'] = df['task_list'].apply(lambda x: x if isinstance(x, list) else [])
             
-            # Limit timesheet data for performance
-            timesheet_query = timesheet_query.limit(10000)
-            timesheets_response = timesheet_query.execute()
-            timesheets_data = timesheets_response.data
-            
-            if not timesheets_data:
-                return pd.DataFrame()
-            
-            # Group timesheet data by user_id for faster processing
-            user_timesheets = {}
-            for timesheet in timesheets_data:
-                user_id = timesheet.get('user_id')
-                if user_id not in user_timesheets:
-                    user_timesheets[user_id] = []
-                user_timesheets[user_id].append(timesheet)
-            
-            # Get all unique jobcode_ids
-            all_jobcode_ids = list(set(t.get('jobcode_id') for t in timesheets_data if t.get('jobcode_id')))
-            
-            # Get jobcodes data in one query
-            jobcodes_data = {}
-            if all_jobcode_ids:
-                jobcodes_response = self.supabase.table('jobcodes').select('id, name, short_code').in_('id', all_jobcode_ids).execute()
-                jobcodes_data = {j['id']: j for j in jobcodes_response.data}
-            
-            # Get projects data in one query
-            projects_data = {}
-            if all_jobcode_ids:
-                projects_response = self.supabase.table('projects').select('jobcode_id, name').in_('jobcode_id', all_jobcode_ids).execute()
-                projects_data = {p['jobcode_id']: p for p in projects_response.data}
-            
-            # Process each user
-            employee_summaries = []
-            
-            for user in users_data:
-                user_id = user['id']
-                
-                # Get timesheet data for this user (empty list if no data)
-                user_timesheet_data = user_timesheets.get(user_id, [])
-                
-                # Calculate summary metrics
-                total_hours = sum(t.get('duration', 0) or 0 for t in user_timesheet_data) / 3600.0
-                work_dates = list(set(t.get('date') for t in user_timesheet_data if t.get('date')))
-                days_worked = len(work_dates)
-                daily_average = total_hours / days_worked if days_worked > 0 else 0
-                
-                # Get unique jobcodes for this user
-                jobcode_ids = list(set(t.get('jobcode_id') for t in user_timesheet_data if t.get('jobcode_id')))
-                
-                # Get jobcode names from cached data
-                clients = []
-                tasks = []
-                for jobcode_id in jobcode_ids:
-                    if jobcode_id in jobcodes_data:
-                        jobcode = jobcodes_data[jobcode_id]
-                        if jobcode.get('name'):
-                            clients.append(jobcode['name'])
-                        
-                        # Get project name if available
-                        if jobcode_id in projects_data:
-                            project = projects_data[jobcode_id]
-                            if project.get('name'):
-                                tasks.append(project['name'])
-                
-                if not tasks:
-                    tasks = clients  # Use jobcode names as tasks if no projects
-                
-                # Get date range
-                dates = [t.get('date') for t in user_timesheet_data if t.get('date')]
-                work_start_date = min(dates) if dates else None
-                work_end_date = max(dates) if dates else None
-                
-                employee_summaries.append({
-                    'employee_id': user_id,
-                    'employee_name': user.get('username', 'Unknown'),
-                    'full_name': user.get('display_name') or f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
-                    'work_start_date': work_start_date,
-                    'work_end_date': work_end_date,
-                    'total_work_hours': total_hours,
-                    'actual_work_days': days_worked,
-                    'average_daily_hours': daily_average,
-                    'client_list': clients,
-                    'task_list': tasks,
-                    'custom_field_values': []  # Skip custom fields for performance
-                })
-            
-            return pd.DataFrame(employee_summaries)
+            return df
             
         except Exception as e:
             st.error(f"Error fetching employee summary: {str(e)}")
@@ -177,7 +97,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_employee_summary(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get summary for specific employee (optimized with caching)
+        Get summary for specific employee using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -197,79 +117,41 @@ class SupabaseEmployeeAnalyticsHandler:
             return cached_data
         
         try:
-            # Get user data
-            user_response = self.supabase.table('users').select('id, username, first_name, last_name, display_name').eq('id', user_id).execute()
-            user_data = user_response.data
+            # Use the comprehensive employee analytics function and filter
+            response = self.supabase.rpc(
+                'get_comprehensive_employee_analytics',
+                {
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if not user_data:
+            # Filter for the specific user
+            if response.data:
+                user_data = [emp for emp in response.data if emp.get('employee_id') == user_id]
+                if user_data:
+                    response.data = user_data
+                else:
+                    response.data = []
+            
+            if not response.data:
                 return pd.DataFrame()
             
-            user = user_data[0]
+            # Convert the response to DataFrame
+            df = pd.DataFrame(response.data)
             
-            # Get timesheet data (optimized query)
-            timesheet_query = self.supabase.table('timesheets').select('duration, date, jobcode_id').eq('user_id', user_id)
+            # Convert arrays to lists for better compatibility
+            if 'client_list' in df.columns:
+                df['client_list'] = df['client_list'].apply(lambda x: x if isinstance(x, list) else [])
+            if 'task_list' in df.columns:
+                df['task_list'] = df['task_list'].apply(lambda x: x if isinstance(x, list) else [])
             
-            if start_date:
-                timesheet_query = timesheet_query.gte('date', start_date)
-            if end_date:
-                timesheet_query = timesheet_query.lte('date', end_date)
-            
-            # Limit timesheet data for performance
-            timesheet_query = timesheet_query.limit(5000)
-            timesheets_response = timesheet_query.execute()
-            timesheets_data = timesheets_response.data
-            
-            # Calculate summary metrics
-            total_hours = sum(t.get('duration', 0) or 0 for t in timesheets_data) / 3600.0
-            work_dates = list(set(t.get('date') for t in timesheets_data if t.get('date')))
-            days_worked = len(work_dates)
-            daily_average = total_hours / days_worked if days_worked > 0 else 0
-            
-            # Get jobcodes and projects (simplified)
-            jobcode_ids = list(set(t.get('jobcode_id') for t in timesheets_data if t.get('jobcode_id')))
-            
-            clients = []
-            tasks = []
-            if jobcode_ids:
-                # Use cached jobcodes data if available
-                jobcodes_cache_key = f"jobcodes_{hash(tuple(jobcode_ids))}"
-                jobcodes_data = self._get_from_cache(jobcodes_cache_key)
-                
-                if jobcodes_data is None:
-                    jobcodes_response = self.supabase.table('jobcodes').select('id, name').in_('id', jobcode_ids).execute()
-                    jobcodes_data = {j['id']: j for j in jobcodes_response.data}
-                    self._set_cache(jobcodes_cache_key, jobcodes_data)
-                
-                for jobcode_id in jobcode_ids:
-                    if jobcode_id in jobcodes_data:
-                        jobcode = jobcodes_data[jobcode_id]
-                        if jobcode.get('name'):
-                            clients.append(jobcode['name'])
-                
-                tasks = clients  # Use jobcode names as tasks for simplicity
-            
-            # Get date range
-            dates = [t.get('date') for t in timesheets_data if t.get('date')]
-            work_start_date = min(dates) if dates else None
-            work_end_date = max(dates) if dates else None
-            
-            result = pd.DataFrame([{
-                'employee_id': user_id,
-                'employee_name': user.get('username', 'Unknown'),
-                'full_name': user.get('display_name') or f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
-                'work_start_date': work_start_date,
-                'work_end_date': work_end_date,
-                'total_work_hours': total_hours,
-                'actual_work_days': days_worked,
-                'average_daily_hours': daily_average,
-                'client_list': clients,
-                'task_list': tasks,
-                'custom_field_values': []  # Skip for performance
-            }])
+            # Add custom_field_values for compatibility
+            df['custom_field_values'] = [[] for _ in range(len(df))]
             
             # Cache the result
-            self._set_cache(cache_key, result)
-            return result
+            self._set_cache(cache_key, df)
+            return df
             
         except Exception as e:
             st.error(f"Error fetching employee summary: {str(e)}")
@@ -277,7 +159,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_employee_daily_work(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get daily work breakdown for specific employee (optimized with caching)
+        Get daily work breakdown for specific employee using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -297,50 +179,24 @@ class SupabaseEmployeeAnalyticsHandler:
             return cached_data
         
         try:
-            # Get timesheet data (optimized query)
-            timesheet_query = self.supabase.table('timesheets').select('duration, date, jobcode_id').eq('user_id', user_id)
+            # Use the individual daily work summary Supabase function
+            response = self.supabase.rpc(
+                'get_individual_daily_work_summary',
+                {
+                    'user_id_param': user_id,
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if start_date:
-                timesheet_query = timesheet_query.gte('date', start_date)
-            if end_date:
-                timesheet_query = timesheet_query.lte('date', end_date)
-            
-            # Limit timesheet data for performance
-            timesheet_query = timesheet_query.limit(5000)
-            timesheets_response = timesheet_query.execute()
-            timesheets_data = timesheets_response.data
-            
-            if not timesheets_data:
+            if not response.data:
                 return pd.DataFrame()
             
-            # Get jobcodes (use cache if available)
-            jobcode_ids = list(set(t.get('jobcode_id') for t in timesheets_data if t.get('jobcode_id')))
-            jobcodes_data = {}
-            if jobcode_ids:
-                jobcodes_cache_key = f"jobcodes_{hash(tuple(jobcode_ids))}"
-                jobcodes_data = self._get_from_cache(jobcodes_cache_key)
-                
-                if jobcodes_data is None:
-                    jobcodes_response = self.supabase.table('jobcodes').select('id, name, short_code').in_('id', jobcode_ids).execute()
-                    jobcodes_data = {j['id']: j for j in jobcodes_response.data}
-                    self._set_cache(jobcodes_cache_key, jobcodes_data)
+            # Convert the response to DataFrame
+            result = pd.DataFrame(response.data)
             
-            # Process timesheet data
-            daily_work_data = []
-            for timesheet in timesheets_data:
-                jobcode_id = timesheet.get('jobcode_id')
-                jobcode = jobcodes_data.get(jobcode_id, {})
-                
-                daily_work_data.append({
-                    'work_date': timesheet.get('date'),
-                    'client_name': jobcode.get('name', 'Unknown'),
-                    'task_name': jobcode.get('name', 'Unknown'),  # Use jobcode name as task for simplicity
-                    'hours_worked': (timesheet.get('duration', 0) or 0) / 3600.0,
-                    'job_code': jobcode.get('short_code', ''),
-                    'custom_field_items': []  # Skip for performance
-                })
-            
-            result = pd.DataFrame(daily_work_data)
+            # Add custom_field_items column for compatibility
+            result['custom_field_items'] = [[] for _ in range(len(result))]
             
             # Cache the result
             self._set_cache(cache_key, result)
@@ -350,9 +206,45 @@ class SupabaseEmployeeAnalyticsHandler:
             st.error(f"Error fetching daily work data: {str(e)}")
             return pd.DataFrame()
     
+    def get_employee_task_distribution(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """
+        Get task distribution for specific employee using Supabase function
+        
+        Args:
+            user_id (int): Employee user ID
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+            
+        Returns:
+            pd.DataFrame: Task distribution data
+        """
+        if not self.supabase:
+            return pd.DataFrame()
+        
+        try:
+            # Use the individual task distribution Supabase function
+            response = self.supabase.rpc(
+                'get_individual_task_distribution',
+                {
+                    'user_id_param': user_id,
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
+            
+            if not response.data:
+                return pd.DataFrame()
+            
+            # Convert the response to DataFrame
+            return pd.DataFrame(response.data)
+            
+        except Exception as e:
+            st.error(f"Error fetching task distribution: {str(e)}")
+            return pd.DataFrame()
+    
     def get_employee_weekly_work(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get weekly work breakdown for specific employee
+        Get weekly work breakdown for specific employee using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -366,32 +258,26 @@ class SupabaseEmployeeAnalyticsHandler:
             return pd.DataFrame()
         
         try:
-            # Get daily work data first
-            daily_data = self.get_employee_daily_work(user_id, start_date, end_date)
+            # Use the individual weekly work summary Supabase function
+            response = self.supabase.rpc(
+                'get_individual_weekly_work_summary',
+                {
+                    'user_id_param': user_id,
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if daily_data.empty:
+            if not response.data:
                 return pd.DataFrame()
             
-            # Group by week
-            daily_data['work_date'] = pd.to_datetime(daily_data['work_date'], errors='coerce')
-            # Remove any rows with invalid dates
-            daily_data = daily_data.dropna(subset=['work_date'])
+            # Convert the response to DataFrame
+            result = pd.DataFrame(response.data)
             
-            if daily_data.empty:
-                return pd.DataFrame()
+            # Add custom_field_items column for compatibility
+            result['custom_field_items'] = [[] for _ in range(len(result))]
             
-            # Convert to week start date using a more reliable method
-            daily_data['work_week'] = (daily_data['work_date'] - pd.to_timedelta(daily_data['work_date'].dt.dayofweek, unit='D')).dt.date
-            
-            weekly_data = daily_data.groupby(['work_week', 'client_name', 'task_name', 'job_code']).agg({
-                'hours_worked': 'sum',
-                'custom_field_items': lambda x: list(set([item for sublist in x for item in sublist]))
-            }).reset_index()
-            
-            # work_week is already a date object, no need to convert again
-            weekly_data = weekly_data.rename(columns={'work_week': 'work_week'})
-            
-            return weekly_data
+            return result
             
         except Exception as e:
             st.error(f"Error fetching weekly work data: {str(e)}")
@@ -399,7 +285,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_employee_productivity_metrics(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get productivity metrics for specific employee (optimized with caching)
+        Get productivity metrics for specific employee using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -419,32 +305,40 @@ class SupabaseEmployeeAnalyticsHandler:
             return cached_data
         
         try:
-            # Get employee summary (this will use its own cache)
-            emp_summary = self.get_employee_summary(user_id, start_date, end_date)
+            # Use the comprehensive employee analytics function and filter
+            response = self.supabase.rpc(
+                'get_comprehensive_employee_analytics',
+                {
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if emp_summary.empty:
+            # Filter for the specific user and extract productivity metrics
+            if response.data:
+                user_data = [emp for emp in response.data if emp.get('employee_id') == user_id]
+                if user_data:
+                    emp_data = user_data[0]
+                    # Convert to productivity metrics format
+                    response.data = [{
+                        'employee_id': emp_data.get('employee_id'),
+                        'employee_name': emp_data.get('employee_name'),
+                        'total_hours': emp_data.get('total_work_hours'),
+                        'days_worked': emp_data.get('actual_work_days'),
+                        'daily_average': emp_data.get('average_daily_hours'),
+                        'productivity_score': emp_data.get('productivity_score'),
+                        'utilization_percentage': emp_data.get('utilization_percentage'),
+                        'overtime_hours': emp_data.get('overtime_hours'),
+                        'performance_rating': emp_data.get('performance_rating')
+                    }]
+                else:
+                    response.data = []
+            
+            if not response.data:
                 return pd.DataFrame()
             
-            emp_data = emp_summary.iloc[0]
-            total_hours = emp_data['total_work_hours']
-            days_worked = emp_data['actual_work_days']
-            daily_average = emp_data['average_daily_hours']
-            
-            # Calculate productivity metrics
-            productivity_score = min(100, (daily_average / 8.0) * 100) if daily_average else 0
-            utilization_percentage = (daily_average / 8.0) * 100 if daily_average else 0
-            overtime_hours = max(0, daily_average - 8.0) * days_worked if daily_average else 0
-            
-            result = pd.DataFrame([{
-                'employee_id': user_id,
-                'employee_name': emp_data['employee_name'],
-                'total_hours': total_hours,
-                'days_worked': days_worked,
-                'daily_average': daily_average,
-                'productivity_score': productivity_score,
-                'utilization_percentage': utilization_percentage,
-                'overtime_hours': overtime_hours
-            }])
+            # Convert the response to DataFrame
+            result = pd.DataFrame(response.data)
             
             # Cache the result
             self._set_cache(cache_key, result)
@@ -489,7 +383,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_employee_client_distribution(self, user_id: int, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get client distribution for specific employee
+        Get client distribution for specific employee using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -503,26 +397,21 @@ class SupabaseEmployeeAnalyticsHandler:
             return pd.DataFrame()
         
         try:
-            # Get daily work data
-            daily_data = self.get_employee_daily_work(user_id, start_date, end_date)
+            # Use the individual client distribution Supabase function
+            response = self.supabase.rpc(
+                'get_individual_client_distribution',
+                {
+                    'user_id_param': user_id,
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if daily_data.empty:
+            if not response.data:
                 return pd.DataFrame()
             
-            # Group by client
-            client_dist = daily_data.groupby('client_name').agg({
-                'hours_worked': 'sum'
-            }).reset_index()
-            
-            total_hours = client_dist['hours_worked'].sum()
-            
-            client_dist['total_hours'] = client_dist['hours_worked']
-            client_dist['billable_hours'] = client_dist['hours_worked']  # Assume all hours are billable
-            client_dist['days_worked'] = daily_data.groupby('client_name')['work_date'].nunique().values
-            client_dist['average_hours_per_day'] = client_dist['total_hours'] / client_dist['days_worked'].replace(0, 1)  # Avoid division by zero
-            client_dist['percentage_of_total'] = (client_dist['total_hours'] / total_hours * 100) if total_hours > 0 else 0
-            
-            return client_dist[['client_name', 'total_hours', 'billable_hours', 'days_worked', 'average_hours_per_day', 'percentage_of_total']]
+            # Convert the response to DataFrame
+            return pd.DataFrame(response.data)
             
         except Exception as e:
             st.error(f"Error fetching client distribution: {str(e)}")
@@ -563,7 +452,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_employee_kpis(self, start_date: str = None, end_date: str = None) -> Dict:
         """
-        Get employee KPIs for dashboard
+        Get employee KPIs for dashboard using Supabase function
         
         Args:
             start_date (str): Start date (YYYY-MM-DD)
@@ -572,11 +461,26 @@ class SupabaseEmployeeAnalyticsHandler:
         Returns:
             Dict: KPI metrics
         """
+        if not self.supabase:
+            return {
+                'total_employees': 0,
+                'avg_hours_per_employee': 0,
+                'avg_utilization': 0,
+                'team_productivity': 0,
+                'overtime_pct': 0
+            }
+        
         try:
-            # Get all employees summary
-            all_employees = self.get_all_employees_summary(start_date, end_date)
+            # Use the comprehensive KPI Supabase function
+            response = self.supabase.rpc(
+                'get_employee_kpis_comprehensive',
+                {
+                    'start_date_param': start_date,
+                    'end_date_param': end_date
+                }
+            ).execute()
             
-            if all_employees.empty:
+            if not response.data:
                 return {
                     'total_employees': 0,
                     'avg_hours_per_employee': 0,
@@ -585,35 +489,15 @@ class SupabaseEmployeeAnalyticsHandler:
                     'overtime_pct': 0
                 }
             
-            # Calculate KPIs
-            total_employees = len(all_employees)
-            total_hours = all_employees['total_work_hours'].sum() or 0
-            avg_hours_per_employee = total_hours / max(1, total_employees)
-            
-            # Calculate average utilization (assuming 8 hours per day as standard)
-            total_days_worked = all_employees['actual_work_days'].sum() or 0
-            standard_hours = total_days_worked * 8  # 8 hours per day standard
-            avg_utilization = (total_hours / max(1, standard_hours)) * 100 if standard_hours > 0 else 0
-            
-            # Calculate team productivity based on hours consistency
-            daily_averages = all_employees[all_employees['average_daily_hours'] > 0]['average_daily_hours'].tolist()
-            if daily_averages:
-                productivity_scores = [min(100, (avg / 8) * 100) for avg in daily_averages if avg]
-                team_productivity = sum(productivity_scores) / len(productivity_scores) if productivity_scores else 0
-            else:
-                team_productivity = 0
-            
-            # Calculate overtime percentage (hours over 8 per day)
-            overtime_hours = sum(max(0, (avg or 0) - 8) * (days or 0) for avg, days in 
-                               zip(all_employees['average_daily_hours'], all_employees['actual_work_days']))
-            overtime_pct = (overtime_hours / max(1, total_hours)) * 100 if total_hours > 0 else 0
+            # Extract the first (and only) row of results
+            kpi_data = response.data[0]
             
             return {
-                'total_employees': total_employees,
-                'avg_hours_per_employee': avg_hours_per_employee,
-                'avg_utilization': avg_utilization,
-                'team_productivity': team_productivity,
-                'overtime_pct': overtime_pct
+                'total_employees': kpi_data.get('total_employees', 0),
+                'avg_hours_per_employee': kpi_data.get('avg_daily_hours_per_employee', 0),
+                'avg_utilization': kpi_data.get('avg_utilization', 0),
+                'team_productivity': kpi_data.get('team_productivity', 0),
+                'overtime_pct': kpi_data.get('overtime_percentage', 0)
             }
             
         except Exception as e:
@@ -712,7 +596,7 @@ class SupabaseEmployeeAnalyticsHandler:
     
     def get_user_summary_data(self, user_id: int, period: str = 'daily', start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
-        Get user summary data for individual employee view
+        Get user summary data for individual employee view using Supabase function
         
         Args:
             user_id (int): Employee user ID
@@ -723,10 +607,57 @@ class SupabaseEmployeeAnalyticsHandler:
         Returns:
             pd.DataFrame: User summary data
         """
-        if period == 'daily':
-            return self.get_employee_daily_work(user_id, start_date, end_date)
-        else:
-            return self.get_employee_weekly_work(user_id, start_date, end_date)
+        if not self.supabase:
+            return pd.DataFrame()
+        
+        try:
+            if period == 'daily':
+                # Use the detailed data Supabase function for daily data
+                response = self.supabase.rpc(
+                    'get_employee_detailed_data',
+                    {
+                        'user_id_param': user_id,
+                        'start_date_param': start_date,
+                        'end_date_param': end_date
+                    }
+                ).execute()
+                
+                if not response.data:
+                    return pd.DataFrame()
+                
+                df = pd.DataFrame(response.data)
+                
+                # Add custom_field_items column for compatibility
+                df['custom_field_items'] = [[] for _ in range(len(df))]
+                
+                return df
+            else:
+                # For weekly data, get daily data and group by week
+                daily_data = self.get_user_summary_data(user_id, 'daily', start_date, end_date)
+                
+                if daily_data.empty:
+                    return pd.DataFrame()
+                
+                # Group by week
+                daily_data['work_date'] = pd.to_datetime(daily_data['work_date'], errors='coerce')
+                daily_data = daily_data.dropna(subset=['work_date'])
+                
+                if daily_data.empty:
+                    return pd.DataFrame()
+                
+                # Convert to week start date
+                daily_data['work_week'] = (daily_data['work_date'] - pd.to_timedelta(daily_data['work_date'].dt.dayofweek, unit='D')).dt.date
+                
+                weekly_data = daily_data.groupby(['work_week', 'client_name', 'task_name', 'job_code']).agg({
+                    'hours_worked': 'sum',
+                    'custom_field_items': lambda x: list(set([item for sublist in x for item in sublist]))
+                }).reset_index()
+                
+                return weekly_data.rename(columns={'work_week': 'work_week'})
+                
+        except Exception as e:
+            st.error(f"Error fetching user summary data: {str(e)}")
+            return pd.DataFrame()
 
 # Convenience functions for easy integration
 def get_supabase_employee_analytics_handler(supabase_url: str = None, supabase_key: str = None) -> SupabaseEmployeeAnalyticsHandler:

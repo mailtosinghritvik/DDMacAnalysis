@@ -33,10 +33,10 @@ BEGIN
         u.last_name,
         u.display_name,
         u.email,
-        COALESCE(SUM(t.duration) / 3600.0, 0) as total_hours,
-        COALESCE(SUM(CASE WHEN j.billable = true THEN t.duration ELSE 0 END) / 3600.0, 0) as billable_hours,
+        ROUND(COALESCE(SUM(t.duration) / 3600.0, 0), 2) as total_hours,
+        ROUND(COALESCE(SUM(CASE WHEN j.billable = true THEN t.duration ELSE 0 END) / 3600.0, 0), 2) as billable_hours,
         COUNT(t.id) as total_entries,
-        COALESCE(AVG(t.duration) / 3600.0, 0) as avg_daily_hours,
+        ROUND(COALESCE(AVG(t.duration) / 3600.0, 0), 2) as avg_daily_hours,
         CASE 
             WHEN u.salaried = true THEN 
                 LEAST(COALESCE(SUM(t.duration) / 3600.0, 0) / 40.0, 1.0)

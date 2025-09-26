@@ -23,12 +23,12 @@ BEGIN
     RETURN QUERY
     SELECT 
         COALESCE(p.name, 'General Work') as task,
-        COALESCE(SUM(t.duration) / 3600.0, 0)::NUMERIC as total_hours,
-        COALESCE(SUM(CASE WHEN j.billable THEN t.duration ELSE 0 END) / 3600.0, 0)::NUMERIC as billable_hours,
+        ROUND(COALESCE(SUM(t.duration) / 3600.0, 0), 2)::NUMERIC as total_hours,
+        ROUND(COALESCE(SUM(CASE WHEN j.billable THEN t.duration ELSE 0 END) / 3600.0, 0), 2)::NUMERIC as billable_hours,
         COUNT(DISTINCT t.date)::BIGINT as days_worked,
         CASE 
             WHEN COUNT(DISTINCT t.date) > 0 THEN 
-                (COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date))::NUMERIC
+                ROUND((COALESCE(SUM(t.duration) / 3600.0, 0) / COUNT(DISTINCT t.date)), 2)::NUMERIC
             ELSE 0::NUMERIC
         END as avg_hours_per_day,
         CASE 
