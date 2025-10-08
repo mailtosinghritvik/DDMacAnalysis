@@ -31,7 +31,7 @@ from utils import (
 def calculate_efficiency_score_with_accubid(project_name, actual_hours, avg_hours_per_day):
     """
     Calculate efficiency score using Accubid breakdown data
-    Filters by task name "EVERYTHING" to get overall project estimates
+    Excludes task name "EVERYTHING" from estimates
     
     Args:
         project_name (str): Name of the project
@@ -47,11 +47,11 @@ def calculate_efficiency_score_with_accubid(project_name, actual_hours, avg_hour
         supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
         supabase = create_client(supabase_url, supabase_key)
         
-        # Get Accubid breakdown data for the project, filtered by task name "EVERYTHING"
-        response = supabase.table('accubid_breakdowns').select('*').eq('job_name', project_name).eq('Task_name', 'EVERYTHING').execute()
+        # Get Accubid breakdown data for the project, excluding the special task "EVERYTHING"
+        response = supabase.table('accubid_breakdowns').select('*').eq('job_name', project_name).neq('Task_name', 'EVERYTHING').execute()
         
         if response.data:
-            # Calculate total estimated hours from Accubid breakdown (filtered by "EVERYTHING" task)
+            # Calculate total estimated hours from Accubid breakdown (excluding "EVERYTHING" task)
             total_estimated_hours = sum(float(item.get('time_estimate', 0)) for item in response.data if item.get('time_estimate'))
             
             if total_estimated_hours > 0:
@@ -674,6 +674,200 @@ def create_hours_vs_days_chart(team_allocation_data):
     fig.update_layout(height=400)
     return fig
 
+def get_foreman_performance_data():
+    """Fetch foreman performance data combining actual vs estimated values"""
+    try:
+        # Get actual hours from timesheets
+        timesheets_result = supabase.table('timesheets').select('jobcode_id, duration').execute()
+        actual_data = pd.DataFrame(timesheets_result.data) if timesheets_result.data else pd.DataFrame()
+        
+        # Get estimated hours from accubid_breakdowns
+        estimates_result = supabase.table('accubid_breakdowns').select('job_name, Task_name, time_estimate, cost_estimate').neq('Task_name', 'EVERYTHING').execute()
+        estimates_data = pd.DataFrame(estimates_result.data) if estimates_result.data else pd.DataFrame()
+        
+        # Get jobcode names
+        jobcodes_result = supabase.table('jobcodes').select('id, name').execute()
+        jobcodes_data = pd.DataFrame(jobcodes_result.data) if jobcodes_result.data else pd.DataFrame()
+        
+        # Get progress data
+        progress_result = supabase.table('project_progress').select('jobcode_id, progress, created_at').execute()
+        progress_data = pd.DataFrame(progress_result.data) if progress_result.data else pd.DataFrame()
+        
+        if actual_data.empty or estimates_data.empty or jobcodes_data.empty:
+            return pd.DataFrame()
+        
+        # Process actual data - group by jobcode_id and sum duration
+        actual_summary = actual_data.groupby('jobcode_id')['duration'].sum().reset_index()
+        actual_summary['actual_hours'] = actual_summary['duration'] / 3600  # Convert seconds to hours
+        actual_summary = actual_summary.drop('duration', axis=1)
+        
+        # Process estimates data - group by job_name and sum time_estimate
+        estimates_summary = estimates_data.groupby('job_name')['time_estimate'].sum().reset_index()
+        estimates_summary = estimates_summary.rename(columns={'job_name': 'name'})
+        
+        # Merge with jobcodes to get jobcode_id
+        estimates_with_jobcode = estimates_summary.merge(
+            jobcodes_data, 
+            left_on='name', 
+            right_on='name', 
+            how='inner'
+        )
+        
+        # Merge actual and estimated data
+        performance_data = actual_summary.merge(
+            estimates_with_jobcode[['id', 'time_estimate', 'name']], 
+            left_on='jobcode_id', 
+            right_on='id', 
+            how='inner'
+        )
+        
+        # Calculate performance metrics
+        performance_data['performance_ratio'] = performance_data['actual_hours'] / performance_data['time_estimate']
+        performance_data['performance_percentage'] = (performance_data['performance_ratio'] - 1) * 100
+        
+        # Determine performance status
+        def get_performance_status(ratio):
+            if ratio > 1.1:  # More than 10% over estimate
+                return "Slower"
+            elif ratio < 0.9:  # More than 10% under estimate
+                return "Faster"
+            else:
+                return "On Track"
+        
+        performance_data['status'] = performance_data['performance_ratio'].apply(get_performance_status)
+        
+        # Add progress data if available
+        if not progress_data.empty:
+            latest_progress = progress_data.groupby('jobcode_id')['progress'].last().reset_index()
+            performance_data = performance_data.merge(
+                latest_progress, 
+                on='jobcode_id', 
+                how='left'
+            )
+            performance_data['progress'] = performance_data['progress'].fillna(0)
+        else:
+            performance_data['progress'] = 0
+        
+        # Calculate efficiency score
+        performance_data['efficiency_score'] = (performance_data['time_estimate'] / performance_data['actual_hours'] * 100).clip(0, 200)
+        
+        return performance_data[['name', 'jobcode_id', 'actual_hours', 'time_estimate', 'performance_ratio', 
+                               'performance_percentage', 'status', 'progress', 'efficiency_score']]
+        
+    except Exception as e:
+        st.error(f"Error fetching foreman performance data: {str(e)}")
+        return pd.DataFrame()
+
+def create_foreman_performance_chart(performance_data):
+    """Create foreman performance chart showing faster/slower/on track"""
+    if performance_data.empty:
+        return None
+    
+    # Create performance distribution chart
+    fig = px.bar(
+        performance_data,
+        x='name',
+        y='performance_percentage',
+        color='status',
+        title='Foreman Performance Analysis (Actual vs Estimated)',
+        labels={
+            'performance_percentage': 'Performance % (Actual/Est - 1)',
+            'name': 'Project Name',
+            'status': 'Performance Status'
+        },
+        color_discrete_map={
+            'Faster': '#28a745',
+            'On Track': '#17a2b8', 
+            'Slower': '#dc3545'
+        }
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=0, line_dash="dash", line_color="black", annotation_text="Target (0%)")
+    fig.add_hline(y=10, line_dash="dash", line_color="orange", annotation_text="10% Over")
+    fig.add_hline(y=-10, line_dash="dash", line_color="orange", annotation_text="10% Under")
+    
+    fig.update_layout(
+        height=500,
+        xaxis_tickangle=-45,
+        showlegend=True
+    )
+    
+    return fig
+
+def create_foreman_efficiency_chart(performance_data):
+    """Create foreman efficiency scatter plot"""
+    if performance_data.empty:
+        return None
+    
+    fig = px.scatter(
+        performance_data,
+        x='time_estimate',
+        y='actual_hours',
+        size='efficiency_score',
+        color='status',
+        hover_data=['name', 'performance_percentage', 'progress'],
+        title='Foreman Efficiency: Estimated vs Actual Hours',
+        labels={
+            'time_estimate': 'Estimated Hours',
+            'actual_hours': 'Actual Hours',
+            'efficiency_score': 'Efficiency Score',
+            'status': 'Performance Status'
+        },
+        color_discrete_map={
+            'Faster': '#28a745',
+            'On Track': '#17a2b8',
+            'Slower': '#dc3545'
+        }
+    )
+    
+    # Add diagonal line for perfect estimation
+    max_val = max(performance_data['time_estimate'].max(), performance_data['actual_hours'].max())
+    fig.add_trace(go.Scatter(
+        x=[0, max_val],
+        y=[0, max_val],
+        mode='lines',
+        line=dict(dash='dash', color='black'),
+        name='Perfect Estimation',
+        showlegend=True
+    ))
+    
+    fig.update_layout(height=500)
+    return fig
+
+def create_foreman_progress_chart(performance_data):
+    """Create foreman progress vs performance chart"""
+    if performance_data.empty:
+        return None
+    
+    fig = px.scatter(
+        performance_data,
+        x='progress',
+        y='performance_percentage',
+        size='actual_hours',
+        color='status',
+        hover_data=['name', 'time_estimate', 'efficiency_score'],
+        title='Project Progress vs Performance Analysis',
+        labels={
+            'progress': 'Progress %',
+            'performance_percentage': 'Performance % (Actual/Est - 1)',
+            'actual_hours': 'Actual Hours',
+            'status': 'Performance Status'
+        },
+        color_discrete_map={
+            'Faster': '#28a745',
+            'On Track': '#17a2b8',
+            'Slower': '#dc3545'
+        }
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=0, line_dash="dash", line_color="black", annotation_text="Target Performance")
+    fig.add_vline(x=100, line_dash="dash", line_color="green", annotation_text="100% Complete")
+    
+    fig.update_layout(height=500)
+    return fig
+
 def display_project_kpis(api_data, estimates_data, progress_data):
     """Display project-level KPIs using client time summary data"""
     col1, col3, col4, col5 = st.columns(4)
@@ -763,10 +957,10 @@ def main():
     display_project_kpis(api_data, estimates_data, progress_data)
     
     # Main Analytics Tabs
-    tab5, tab6 = st.tabs([
-     
+    tab5, tab6= st.tabs([
         "📊 API Data View",
-        "🔍 Project & Client Explorer"
+        "🔍 Project & Client Explorer",
+        
     ])
     
     
@@ -886,6 +1080,193 @@ def main():
                         
                         timeline_df = pd.DataFrame(timeline_data)
                         st.dataframe(timeline_df, use_container_width=True, hide_index=True)
+                        
+                        # Removed additional performance bar graph as requested
+                        
+                        # Add project progress data section
+                        st.subheader("📈 Project Progress Data")
+                        
+                        # Fetch project progress data for this specific project
+                        try:
+                            progress_result = supabase.table('project_progress').select('*').eq('jobcode_id', jobcode_id).order('created_at', desc=True).execute()
+                            
+                            if progress_result.data:
+                                progress_df = pd.DataFrame(progress_result.data)
+                                
+                                # Format the data for display
+                                progress_df['created_at'] = pd.to_datetime(progress_df['created_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                                progress_df['progress'] = progress_df['progress'].round(2)
+                                
+                                # Show only Progress and Created At
+                                progress_display = progress_df[['progress', 'created_at']].rename(columns={
+                                    'progress': 'Progress %',
+                                    'created_at': 'Date Created'
+                                })
+                                
+                                # Show progress table
+                                st.write("**Progress History:**")
+                                st.dataframe(progress_display, use_container_width=True, height=300)
+                                
+                                # Create progress trend chart based on timesheets vs estimates (Actual/Estimate %)
+                                with st.spinner("Building timesheet-based progress trend..."):
+                                    try:
+                                        # Estimated hours from accubid_breakdowns (exclude 'EVERYTHING')
+                                        est_res = (
+                                            supabase
+                                            .table('accubid_breakdowns')
+                                            .select('time_estimate, Task_name')
+                                            .eq('job_name', project_name)
+                                            .neq('Task_name', 'EVERYTHING')
+                                            .execute()
+                                        )
+                                        estimated_hours_ts = 0.0
+                                        if est_res.data:
+                                            estimated_hours_ts = sum(
+                                                entry.get('time_estimate') or 0 for entry in est_res.data
+                                            )
+
+                                        if estimated_hours_ts > 0:
+                                            # Pull timesheets for this job and aggregate by date
+                                            ts_res = (
+                                                supabase
+                                                .table('timesheets')
+                                                .select('date, duration')
+                                                .eq('jobcode_id', jobcode_id)
+                                                .order('date', desc=False)
+                                                .execute()
+                                            )
+
+                                            ts_df = pd.DataFrame(ts_res.data) if ts_res.data else pd.DataFrame()
+                                            if not ts_df.empty:
+                                                # Normalize
+                                                # Convert to timezone-naive datetimes for safe comparison
+                                                ts_df['date'] = pd.to_datetime(ts_df['date'], errors='coerce', utc=True).dt.tz_convert(None)
+                                                ts_df = ts_df.dropna(subset=['date'])
+                                                ts_df['hours'] = (pd.to_numeric(ts_df['duration'], errors='coerce').fillna(0) / 3600.0)
+
+                                                # Group by week (week starting Monday) and compute cumulative performance
+                                                ts_df['week_start'] = ts_df['date'] - pd.to_timedelta(ts_df['date'].dt.dayofweek, unit='D')
+                                                weekly = ts_df.groupby('week_start', as_index=False)['hours'].sum()
+                                                weekly = weekly.sort_values('week_start')
+                                                weekly['cumulative_hours'] = weekly['hours'].cumsum()
+                                                weekly['percent'] = (weekly['cumulative_hours'] / estimated_hours_ts) * 100
+
+                                                def status_from_pct(p):
+                                                    if p > 105:
+                                                        return 'Faster'
+                                                    if p < 95:
+                                                        return 'Slower'
+                                                    return 'On Track'
+
+                                                weekly['Status'] = weekly['percent'].apply(status_from_pct)
+
+                                                color_map = {
+                                                    'Faster': '#28a745',
+                                                    'On Track': '#17a2b8',
+                                                    'Slower': '#dc3545'
+                                                }
+
+                                                # Only one graph required below for current week; skip plotting full weekly trend
+
+                                                # Compute current-week (latest progress window) performance and show as single bar
+                                                try:
+                                                    anchor_res = (
+                                                        supabase
+                                                        .table('project_progress')
+                                                        .select('created_at')
+                                                        .eq('jobcode_id', jobcode_id)
+                                                        .order('created_at', desc=True)
+                                                        .limit(1)
+                                                        .execute()
+                                                    )
+                                                    if anchor_res.data and len(anchor_res.data) > 0:
+                                                        anchor_dt = pd.to_datetime(anchor_res.data[0]['created_at'], errors='coerce', utc=True)
+                                                        try:
+                                                            anchor_dt = anchor_dt.tz_convert(None)
+                                                        except Exception:
+                                                            pass
+                                                    else:
+                                                        st.info('No recent entries in project_progress; skipping weekly performance graph.')
+                                                        raise Exception('missing_anchor')
+                                                    week_start = anchor_dt - pd.Timedelta(days=7)
+                                                    week_end = anchor_dt
+
+                                                    ts_week = ts_df[(ts_df['date'] >= week_start) & (ts_df['date'] <= week_end)].copy()
+                                                    actual_week_hours = ts_week['hours'].sum() if not ts_week.empty else 0.0
+                                                    week_percent = (actual_week_hours / estimated_hours_ts * 100) if estimated_hours_ts > 0 else 0
+
+                                                    if week_percent > 105:
+                                                        wk_status = 'Faster'
+                                                        wk_color = '#28a745'
+                                                    elif week_percent < 95:
+                                                        wk_status = 'Slower'
+                                                        wk_color = '#dc3545'
+                                                    else:
+                                                        wk_status = 'On Track'
+                                                        wk_color = '#17a2b8'
+
+                                                    st.subheader('Current Week Performance')
+                                                    wk_df = pd.DataFrame({
+                                                        'Window': [f"{week_start.date()} → {week_end.date()}"],
+                                                        'Percent': [week_percent],
+                                                        'Status': [wk_status]
+                                                    })
+                                                    fig_week = px.bar(
+                                                        wk_df,
+                                                        x='Window',
+                                                        y='Percent',
+                                                        color='Status',
+                                                        color_discrete_map=color_map,
+                                                        title='Weekly Actual/Estimate Performance (%)'
+                                                    )
+                                                    fig_week.update_traces(marker_color=wk_color, texttemplate='%{y:.1f}%', textposition='outside')
+                                                    fig_week.add_hline(y=100, line_dash='dash', line_color='gray', annotation_text='100% Target')
+                                                    fig_week.add_hrect(y0=95, y1=105, fillcolor='rgba(23,162,184,0.12)', line_width=0)
+                                                    fig_week.update_layout(height=320, yaxis_title='Performance %')
+                                                    st.plotly_chart(fig_week, use_container_width=True)
+
+                                                    # Quick metrics
+                                                    c1, c2, c3 = st.columns(3)
+                                                    with c1:
+                                                        st.metric('Actual Hours (Week)', f"{actual_week_hours:.1f}")
+                                                    with c2:
+                                                        st.metric('Estimated Hours (Total)', f"{estimated_hours_ts:.1f}")
+                                                    with c3:
+                                                        st.metric('Performance % (Week)', f"{week_percent:.1f}%")
+                                                except Exception as e:
+                                                    st.warning(f"Could not compute weekly window performance: {e}")
+                                            else:
+                                                st.info('No timesheet entries found to build trend.')
+                                        else:
+                                            st.info("No estimated hours found to compute performance trend.")
+                                    except Exception as e:
+                                        st.error(f"Error building progress trend: {e}")
+                                
+                                # Show progress summary
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    latest_progress = progress_df['progress'].iloc[0] if not progress_df.empty else 0
+                                    st.metric("Latest Progress", f"{latest_progress:.1f}%")
+                                
+                                with col2:
+                                    max_progress = progress_df['progress'].max() if not progress_df.empty else 0
+                                    st.metric("Highest Progress", f"{max_progress:.1f}%")
+                                
+                                with col3:
+                                    progress_entries = len(progress_df)
+                                    st.metric("Progress Entries", progress_entries)
+                                
+                            else:
+                                st.info("No progress data found for this project in the project_progress table.")
+                                
+                        except Exception as e:
+                            st.error(f"Error fetching progress data: {str(e)}")
+                        
+                        
+                        
+                     
+                               
                 
                 elif view_type == "👥 User Details":
                     # Show user details for this project
@@ -1623,7 +2004,7 @@ def main():
                 st.warning("No data available from the API.")
         else:
             st.error("Unable to fetch data from the API. Please check your connection and try again.")
-    
+        
     # Alerts section
     if alerts_data:
         st.markdown("---")

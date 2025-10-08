@@ -201,8 +201,8 @@ def fetch_available_jobcodes():
 
 
 
-def create_planned_vs_actual_chart(df):
-    """Create planned vs actual hours chart"""
+def create_planned_vs_actual_chart(df, selected_job_name=None):
+    """Create planned vs actual hours chart with foreman progress"""
     if df.empty:
         return None, pd.DataFrame()
     
@@ -238,6 +238,33 @@ def create_planned_vs_actual_chart(df):
     else:
         task_data['Actual_Hours'] = 0
     
+    # Get foreman progress for tasks
+    foreman_progress = get_foreman_progress_for_tasks(task_data, selected_job_name)
+    task_data['Foreman_Progress_%'] = task_data['Task_Name'].map(foreman_progress).fillna(0)
+    
+    # Calculate actual completion percentage based on actual vs estimated hours
+    task_data['Actual_Completion_%'] = np.where(
+        task_data['Estimated_Hours'] > 0,
+        (task_data['Actual_Hours'] / task_data['Estimated_Hours'] * 100).round(2),
+        0
+    )
+    
+    # Calculate if foreman is faster or slower than actual progress
+    # If foreman reports higher % than actual completion, they are SLOWER (behind actual work)
+    # If foreman reports lower % than actual completion, they are FASTER (ahead of actual work)
+    task_data['Faster_or_Slower'] = np.where(
+        task_data['Foreman_Progress_%'] > task_data['Actual_Completion_%'],
+        'Slower',
+        np.where(
+            task_data['Foreman_Progress_%'] < task_data['Actual_Completion_%'],
+            'Faster',
+            'On Track'
+        )
+    )
+    
+    # Calculate the difference between foreman progress and actual completion
+    task_data['Progress_Difference'] = (task_data['Foreman_Progress_%'] - task_data['Actual_Completion_%']).round(2)
+    
     # Calculate statistical variance between Actual_Hours and Estimated_Hours
     # Treating each as a single observation from two samples, so variance = ((x1 - mean)^2 + (x2 - mean)^2) / (n-1) where n=2
     def calc_stat_variance(row):
@@ -248,7 +275,6 @@ def create_planned_vs_actual_chart(df):
         return (((x1 - mean) ** 2 + (x2 - mean) ** 2) / 1)**0.5
 
     task_data['Variance'] = task_data.apply(calc_stat_variance, axis=1)
-    task_data['over_underBud'] = task_data['Actual_Hours'] - task_data['Estimated_Hours']
     task_data['Variance_Percent'] = np.where(
         task_data['Estimated_Hours'] > 0,
         (task_data['Variance'] / task_data['Estimated_Hours'] * 100).round(2),
@@ -278,8 +304,39 @@ def create_planned_vs_actual_chart(df):
         textposition='auto',
     ))
     
+    # Add foreman progress line (scaled to fit the chart)
+    if 'Foreman_Progress_%' in task_data.columns:
+        # Scale foreman progress to fit within the chart range
+        max_hours = max(task_data['Estimated_Hours'].max(), task_data['Actual_Hours'].max())
+        if max_hours > 0:
+            scaled_progress = (task_data['Foreman_Progress_%'] / 100) * max_hours
+            
+            # Create color coding based on faster/slower status
+            colors = []
+            for status in task_data['Faster_or_Slower']:
+                if status == 'Faster':
+                    colors.append('green')
+                elif status == 'Slower':
+                    colors.append('red')
+                else:  # On Track
+                    colors.append('orange')
+            
+            fig.add_trace(go.Scatter(
+                name='Foreman Progress %',
+                x=task_data['Task_Name'],
+                y=scaled_progress,
+                mode='lines+markers',
+                line=dict(color='orange', width=3),
+                marker=dict(size=8, color=colors),
+                text=task_data['Foreman_Progress_%'].round(1).astype(str) + '%<br>' + 
+                     task_data['Faster_or_Slower'] + '<br>' +
+                     'Diff: ' + task_data['Progress_Difference'].astype(str) + '%',
+                textposition='top center',
+                yaxis='y'
+            ))
+    
     fig.update_layout(
-        title='Estimated vs Actual Task Hours by Task Name',
+        title='Estimated vs Actual Task Hours by Task Name (with Foreman Progress)',
         xaxis_title='Task Name',
         yaxis_title='Hours',
         barmode='group',
@@ -288,6 +345,135 @@ def create_planned_vs_actual_chart(df):
     )
     
     return fig, task_data
+
+def get_foreman_progress_for_tasks(task_data: pd.DataFrame, selected_job_name: str) -> dict:
+    """Get foreman progress for tasks from task_progress table.
+    
+    Returns a dictionary mapping task_name to latest progress percentage.
+    """
+    progress_map = {}
+    if not SUPABASE_CONFIGURED or task_data is None or task_data.empty:
+        return progress_map
+    
+    try:
+        # Get task IDs from accubid_breakdowns for the selected job
+        abd_res = (
+            supabase.table("accubid_breakdowns")
+            .select("id, Task_name, job_name")
+            .eq("job_name", selected_job_name)
+            .execute()
+        )
+        
+        if not abd_res or not abd_res.data:
+            return progress_map
+            
+        # Create mapping from task_name to task_id
+        task_name_to_id = {}
+        for row in abd_res.data:
+            task_name = row.get("Task_name")
+            task_id = row.get("id")
+            if task_name and task_id is not None:
+                task_name_to_id[task_name] = task_id
+        
+        # Debug: Print task mapping for troubleshooting
+        # st.write("Debug - Task name to ID mapping:", task_name_to_id)
+        
+        # Get latest progress for each task
+        for task_name, task_id in task_name_to_id.items():
+            try:
+                progress_res = (
+                    supabase.table("task_progress")
+                    .select("progress, created_at")
+                    .eq("task_id", task_id)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                
+                if progress_res and progress_res.data:
+                    progress_value = progress_res.data[0].get("progress", 0)
+                    progress_map[task_name] = progress_value
+                    # Debug: Print progress found
+                    # st.write(f"Debug - Found progress for {task_name}: {progress_value}%")
+                else:
+                    progress_map[task_name] = 0
+                    # Debug: Print no progress found
+                    # st.write(f"Debug - No progress found for {task_name}")
+            except Exception as e:
+                progress_map[task_name] = 0
+                # Debug: Print error
+                # st.write(f"Debug - Error getting progress for {task_name}: {str(e)}")
+                
+    except Exception as e:
+        # Debug: Print general error
+        # st.write(f"Debug - General error in get_foreman_progress_for_tasks: {str(e)}")
+        pass
+    
+    return progress_map
+
+def save_task_progress_rows(task_data: pd.DataFrame, selected_job_name: str) -> dict:
+    """Persist task progress rows into public.task_progress.
+
+    Only runs when Supabase is configured and a specific job (not All Projects) is selected.
+    Returns summary dict with counts.
+    """
+    summary = {"inserted": 0, "skipped": 0, "errors": 0}
+    if not SUPABASE_CONFIGURED:
+        return summary
+    if not selected_job_name or selected_job_name == "All Projects":
+        return summary
+    if task_data is None or task_data.empty:
+        return summary
+
+    # Ensure required columns
+    required = {"Task_Name", "Estimated_Hours", "Actual_Hours"}
+    if not required.issubset(set(task_data.columns)):
+        return summary
+
+    try:
+        # Map task_name -> accubid_breakdowns.id within the selected job
+        abd_res = (
+            supabase.table("accubid_breakdowns")
+            .select("id, Task_name, job_name")
+            .eq("job_name", selected_job_name)
+            .execute()
+        )
+        mapping = {}
+        if abd_res and abd_res.data:
+            for row in abd_res.data:
+                tname = row.get("Task_name")
+                tid = row.get("id")
+                if tname and tid is not None:
+                    # If duplicates, keep first
+                    mapping.setdefault(tname, tid)
+
+        # Insert each task row
+        for _, row in task_data.iterrows():
+            task_name = row.get("Task_Name")
+            est = float(row.get("Estimated_Hours") or 0)
+            act = float(row.get("Actual_Hours") or 0)
+            if not task_name:
+                summary["skipped"] += 1
+                continue
+            task_id = mapping.get(task_name)
+            if task_id is None:
+                # No matching task id in accubid_breakdowns for this job
+                summary["skipped"] += 1
+                continue
+            progress_val = 0.0 if est <= 0 else (act / est) * 100.0
+
+            # Write row
+            try:
+                supabase.table("task_progress").insert({
+                    "task_id": task_id,
+                    "progress": progress_val,
+                }).execute()
+                summary["inserted"] += 1
+            except Exception:
+                summary["errors"] += 1
+        return summary
+    except Exception:
+        return summary
 
 def create_variance_chart(task_data):
     """Create variance analysis chart"""
@@ -490,6 +676,99 @@ def create_job_analysis_chart(df):
     
     return fig, job_data
 
+
+def build_task_progress_table(selected_job_name=None):
+    """Build task progress table using estimates from accubid_breakdowns and actuals from timesheets.
+
+    Progress % = (Actual_Hours / Estimated_Hours) * 100
+    """
+    if not SUPABASE_CONFIGURED:
+        # Fallback using available dataframe construction
+        df = get_sample_accubid_data()
+        if selected_job_name and selected_job_name != "All Projects":
+            df = df[df["job_name"] == selected_job_name]
+
+        # Prefer EVERYTHING rows for estimate; if none, sum all
+        def estimate_for_job(group: pd.DataFrame) -> float:
+            everything = group[group["task_name"].str.contains("EVERYTHING", case=False, na=False)]
+            if not everything.empty:
+                return float(pd.to_numeric(everything["time_estimate"], errors="coerce").fillna(0).sum())
+            return float(pd.to_numeric(group["time_estimate"], errors="coerce").fillna(0).sum())
+
+        est_by_job = df.groupby("job_name").apply(estimate_for_job).reset_index(name="Estimated_Hours")
+        est_by_job["Actual_Hours"] = 0.0
+        est_by_job["Completion_%"] = np.where(
+            est_by_job["Estimated_Hours"] > 0,
+            (est_by_job["Actual_Hours"] / est_by_job["Estimated_Hours"]) * 100,
+            0.0,
+        )
+        return est_by_job
+
+    # Supabase path
+    try:
+        # Filter accubid_breakdowns by job if provided
+        abd_query = supabase.table("accubid_breakdowns").select("job_name,task_name,time_estimate")
+        if selected_job_name and selected_job_name != "All Projects":
+            abd_query = abd_query.eq("job_name", selected_job_name)
+        abd_res = abd_query.execute()
+        abd_rows = abd_res.data if abd_res and abd_res.data else []
+
+        if not abd_rows:
+            return pd.DataFrame(columns=["job_name", "Estimated_Hours", "Actual_Hours", "Completion_%"])  # empty
+
+        abd_df = pd.DataFrame(abd_rows)
+        if "time_estimate" in abd_df.columns:
+            abd_df["time_estimate"] = pd.to_numeric(abd_df["time_estimate"], errors="coerce").fillna(0.0)
+
+        # Compute estimate per job: prefer EVERYTHING rows per job; else sum all
+        def compute_estimate(group: pd.DataFrame) -> float:
+            everything = group[group["task_name"].str.contains("EVERYTHING", case=False, na=False)]
+            if not everything.empty:
+                return float(everything["time_estimate"].sum())
+            return float(group["time_estimate"].sum())
+
+        est_df = (
+            abd_df.groupby("job_name")
+            .apply(compute_estimate)
+            .reset_index(name="Estimated_Hours")
+        )
+
+        # For actuals, map job_name -> jobcodes.id then sum timesheets.duration
+        job_names = est_df["job_name"].dropna().unique().tolist()
+
+        actual_hours_map = {}
+        for job_name in job_names:
+            try:
+                jc_res = supabase.table("jobcodes").select("id").eq("name", job_name).execute()
+                jobcode_id = None
+                if jc_res and jc_res.data:
+                    jobcode_id = jc_res.data[0].get("id")
+                if jobcode_id:
+                    ts_res = (
+                        supabase.table("timesheets").select("duration").eq("jobcode_id", jobcode_id).execute()
+                    )
+                    total_seconds = 0
+                    if ts_res and ts_res.data:
+                        total_seconds = sum([(row.get("duration") or 0) for row in ts_res.data])
+                    actual_hours_map[job_name] = float(total_seconds) / 3600.0
+                else:
+                    actual_hours_map[job_name] = 0.0
+            except Exception:
+                actual_hours_map[job_name] = 0.0
+
+        est_df["Actual_Hours"] = est_df["job_name"].map(actual_hours_map).fillna(0.0)
+        est_df["Completion_%"] = np.where(
+            est_df["Estimated_Hours"] > 0,
+            (est_df["Actual_Hours"] / est_df["Estimated_Hours"]) * 100.0,
+            0.0,
+        )
+
+        # Sort for easier readability
+        est_df = est_df.sort_values(by=["Completion_%"], ascending=False).reset_index(drop=True)
+        return est_df
+    except Exception:
+        return pd.DataFrame(columns=["job_name", "Estimated_Hours", "Actual_Hours", "Completion_%"])  # empty
+
 def create_task_category_chart(df):
     """Create task category breakdown chart"""
     if df.empty:
@@ -618,6 +897,16 @@ def main():
     
     # API Status - removed info message
     
+    # Task Progress Table (Completion %)
+    st.markdown("---")
+    st.subheader("✅ Task Progress (Completion %)")
+    with st.spinner("Building progress table..."):
+        progress_df = build_task_progress_table(selected_job_name)
+    if progress_df is not None and not progress_df.empty:
+        st.dataframe(progress_df, use_container_width=True)
+    else:
+        st.info("No progress data available for the selected filter.")
+
     # Fetch data
     with st.spinner("Loading task hours data..."):
         df = fetch_task_hours_data(limit=1000, offset=0, jobcode_id=jobcode_id, job_name=selected_job_name)
@@ -658,15 +947,145 @@ def main():
     actual_tasks_df = df[~df['task_name'].str.contains('EVERYTHING', case=False, na=False)] if not df.empty and 'task_name' in df.columns else df
     
     if not actual_tasks_df.empty:
-        planned_actual_fig, task_data = create_planned_vs_actual_chart(actual_tasks_df)
+        planned_actual_fig, task_data = create_planned_vs_actual_chart(actual_tasks_df, selected_job_name)
         if planned_actual_fig:
             st.plotly_chart(planned_actual_fig, use_container_width=True)
             
             # Display task data table
             st.subheader("📋 Task Details - Actual Tasks")
             st.dataframe(task_data, use_container_width=True)
+            
+            # Foreman Progress Input Section
+            if SUPABASE_CONFIGURED and selected_job_name != "All Projects":
+                st.markdown("---")
+                st.subheader("👷 Foreman Progress Update")
+                
+                # Get task options for the selected job
+                try:
+                    abd_res = (
+                        supabase.table("accubid_breakdowns")
+                        .select("id, Task_name")
+                        .eq("job_name", selected_job_name)
+                        .execute()
+                    )
+                    
+                    if abd_res and abd_res.data:
+                        # Create task selection dropdown
+                        task_options = {}
+                        for row in abd_res.data:
+                            task_name = row.get("Task_name")
+                            task_id = row.get("id")
+                            if task_name and task_id is not None:
+                                task_options[f"{task_name} (ID: {task_id})"] = task_id
+                        
+                        if task_options:
+                            selected_task_display = st.selectbox(
+                                "Select Task to Update Progress:",
+                                options=list(task_options.keys()),
+                                key="foreman_task_selector"
+                            )
+                            selected_task_id = task_options[selected_task_display]
+                            
+                            # Get current progress for the selected task
+                            current_progress = 0
+                            try:
+                                progress_res = (
+                                    supabase.table("task_progress")
+                                    .select("progress, created_at")
+                                    .eq("task_id", selected_task_id)
+                                    .order("created_at", desc=True)
+                                    .limit(1)
+                                    .execute()
+                                )
+                                if progress_res and progress_res.data:
+                                    current_progress = progress_res.data[0].get("progress", 0)
+                            except Exception:
+                                pass
+                            
+                            # Progress input
+                            col1, col2 = st.columns([2, 1])
+                            with col1:
+                                new_progress = st.slider(
+                                    f"Progress Percentage (Current: {current_progress}%):",
+                                    min_value=0,
+                                    max_value=100,
+                                    value=current_progress,
+                                    key="foreman_progress_slider"
+                                )
+                            
+                            with col2:
+                                st.write("")  # Empty space for alignment
+                                if st.button("💾 Update Foreman Progress", key="update_foreman_progress", type="primary"):
+                                    # Insert new progress
+                                    try:
+                                        data = {
+                                            'task_id': selected_task_id,
+                                            'progress': new_progress,
+                                            'created_at': datetime.now().isoformat()
+                                        }
+                                        
+                                        result = supabase.table('task_progress').insert(data).execute()
+                                        
+                                        if result.data:
+                                            st.success(f"✅ Foreman progress updated successfully!")
+                                            st.success(f"Task: {selected_task_display}")
+                                            st.success(f"Progress: {new_progress}%")
+                                            st.rerun()  # Refresh the page to show updated data
+                                        else:
+                                            st.error("❌ Failed to update foreman progress")
+                                    except Exception as e:
+                                        st.error(f"❌ Error updating foreman progress: {str(e)}")
+                        else:
+                            st.info("No tasks found for the selected job.")
+                    else:
+                        st.info("No tasks found for the selected job.")
+                except Exception as e:
+                    st.error(f"Error loading tasks: {str(e)}")
+            
+            # Save progress button (only when a specific job is selected)
+            if SUPABASE_CONFIGURED and selected_job_name != "All Projects":
+                if st.button("💾 Save Task Progress to Database", key="save_task_progress"):
+                    with st.spinner("Saving progress to task_progress..."):
+                        result = save_task_progress_rows(task_data, selected_job_name)
+                    st.success(f"Saved: {result.get('inserted',0)} | Skipped: {result.get('skipped',0)} | Errors: {result.get('errors',0)}")
+            elif not SUPABASE_CONFIGURED:
+                st.info("Supabase not configured. Progress saving is disabled.")
+            else:
+                st.info("Select a specific job to enable saving progress.")
     else:
         st.warning("No actual task data found (excluding EVERYTHING tasks).")
+    
+    # Progress Analysis Section
+    st.markdown("---")
+    st.subheader("⚡ Foreman vs Actual Progress Analysis")
+    
+    if not actual_tasks_df.empty and 'Faster_or_Slower' in task_data.columns:
+        # Create a summary table for progress analysis
+        progress_summary = task_data[['Task_Name', 'Foreman_Progress_%', 'Actual_Completion_%', 'Faster_or_Slower', 'Progress_Difference']].copy()
+        progress_summary = progress_summary.sort_values('Progress_Difference', ascending=False)
+        
+        # Color code the faster/slower column
+        def color_faster_slower(val):
+            if val == 'Faster':
+                return 'background-color: #d4edda; color: #155724'  # Green
+            elif val == 'Slower':
+                return 'background-color: #f8d7da; color: #721c24'  # Red
+            else:
+                return 'background-color: #fff3cd; color: #856404'  # Yellow
+        
+        styled_summary = progress_summary.style.applymap(color_faster_slower, subset=['Faster_or_Slower'])
+        st.dataframe(styled_summary, use_container_width=True)
+        
+        # Add explanation
+        st.info("""
+        **Progress Analysis Legend:**
+        - 🟢 **Faster**: Foreman reports lower progress than actual completion (ahead of actual work)
+        - 🔴 **Slower**: Foreman reports higher progress than actual completion (behind actual work)
+        - 🟡 **On Track**: Foreman progress matches actual completion
+        - **Progress Difference**: Foreman % - Actual Completion %
+        """)
+    else:
+        st.write("No progress analysis data available")
     
     # Variance Analysis - Use actual tasks data
     st.markdown("---")
@@ -704,19 +1123,37 @@ def main():
     st.subheader("📈 Summary Statistics")
     
     if not task_data.empty and 'Variance' in task_data.columns:
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             avg_variance = task_data['Variance'].mean()
             st.metric("Average Variance", f"{avg_variance:.1f} hours")
         
         with col2:
-            over_budget_tasks = len(task_data[task_data['over_underBud'] > 0]) # count of all task acutla > estimat
+            over_budget_tasks = len(task_data[task_data['Actual_Hours'] > task_data['Estimated_Hours']]) # count of all task actual > estimate
             st.metric("Over Time Tasks", over_budget_tasks)
         
         with col3:
-            under_budget_tasks = len(task_data[task_data['over_underBud'] < 0]) # count of all task acutla < estimat
+            under_budget_tasks = len(task_data[task_data['Actual_Hours'] < task_data['Estimated_Hours']]) # count of all task actual < estimate
             st.metric("Under Time Tasks", under_budget_tasks)
+        
+        with col4:
+            if 'Foreman_Progress_%' in task_data.columns:
+                avg_foreman_progress = task_data['Foreman_Progress_%'].mean()
+                st.metric("Avg Foreman Progress", f"{avg_foreman_progress:.1f}%")
+            else:
+                st.metric("Avg Foreman Progress", "N/A")
+        
+        with col5:
+            if 'Faster_or_Slower' in task_data.columns:
+                faster_tasks = len(task_data[task_data['Faster_or_Slower'] == 'Faster'])
+                slower_tasks = len(task_data[task_data['Faster_or_Slower'] == 'Slower'])
+                on_track_tasks = len(task_data[task_data['Faster_or_Slower'] == 'On Track'])
+                st.metric("Faster Tasks", faster_tasks)
+                st.metric("Slower Tasks", slower_tasks)
+                st.metric("On Track Tasks", on_track_tasks)
+            else:
+                st.metric("Progress Analysis", "N/A")
     
     # Additional AccuBid-specific statistics
     if not df.empty:

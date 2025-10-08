@@ -598,6 +598,9 @@ def main():
         with nav_col3:
             if st.button("📧 Email Report Writer", use_container_width=True):
                 st.switch_page("pages/EmailReportWriter.py")
+            
+            if st.button("👷 Foreman Analysis", use_container_width=True):
+                st.switch_page("pages/Foreman_Analysis.py")
         
         # 7. Footer with system info
         st.markdown("---")
