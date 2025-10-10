@@ -26,8 +26,8 @@ class SupabaseQueryHandler:
         if SUPABASE_AVAILABLE:
             try:
                 # Initialize Supabase client
-                url = "https://tgendmgdrljuxxxyynpz.supabase.co"
-                key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+                url = os.getenv("SUPABASE_URL")
+                key = os.getenv("SUPABASE_KEY")
                 
                 if url and key:
                     self.client = create_client(url, key)
@@ -902,7 +902,7 @@ def is_supabase_available() -> bool:
     """Check if Supabase is available and connected"""
     # Check if environment variables are set
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
+    key = os.getenv("SUPABASE_KEY")
     
     if not url or not key:
         return False

@@ -5,8 +5,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import requests
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import Supabase handler
 from utils.supabase_employee_analytics_handler import (
@@ -106,8 +111,8 @@ def get_employee_data_supabase_integrated():
     """Fetch employee data using Supabase"""
     try:
         # Use your existing Supabase credentials
-        supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
-        supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
         
         # Get employee data using Supabase
         employee_data, kpis = get_employee_data_supabase(supabase_url, supabase_key)
@@ -476,8 +481,8 @@ def main():
 
         # Get employee list from Supabase
         try:
-            supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
-            supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
             
             handler = get_supabase_employee_analytics_handler(supabase_url, supabase_key)
             employee_list = handler.get_employee_list()

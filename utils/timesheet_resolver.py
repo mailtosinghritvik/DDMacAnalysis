@@ -5,9 +5,14 @@ Resolves timesheet ID 7969 to user data and provides functions to fetch correct 
 
 import pandas as pd
 import requests
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import logging
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,8 +23,8 @@ class TimesheetResolver:
     
     def __init__(self, supabase_url: str = None, supabase_key: str = None):
         """Initialize with Supabase connection"""
-        self.supabase_url = supabase_url or "https://tgendmgdrljuxxxyynpz.supabase.co"
-        self.supabase_key = supabase_key or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
+        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY")
         
         try:
             from supabase import create_client, Client

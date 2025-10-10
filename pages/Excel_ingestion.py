@@ -14,9 +14,15 @@ except ImportError:
     SUPABASE_AVAILABLE = False
     st.error("❌ Supabase not installed. Run: pip install supabase")
 
-# Supabase configuration (replace with your actual values)
-SUPABASE_URL = "https://tgendmgdrljuxxxyynpz.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+# Supabase configuration
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Initialize Supabase client
 if SUPABASE_AVAILABLE and SUPABASE_URL != "LMAO_WOW":

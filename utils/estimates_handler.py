@@ -6,10 +6,15 @@ Handles Excel file uploads, processes estimates, and integrates with Supabase
 import pandas as pd
 import numpy as np
 import io
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import random
 from supabase import create_client, Client
+
+# Load environment variables from .env file
+load_dotenv()
 
 class EstimatesHandler:
     """
@@ -24,8 +29,8 @@ class EstimatesHandler:
             supabase_url (str): Supabase project URL
             supabase_key (str): Supabase API key
         """
-        self.supabase_url = supabase_url or "https://tgendmgdrljuxxxyynpz.supabase.co"
-        self.supabase_key = supabase_key or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
+        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY")
         
         # Initialize Supabase client (demo mode for now)
         try:

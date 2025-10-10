@@ -14,9 +14,15 @@ try:
 except ImportError:
     SUPABASE_AVAILABLE = False
 
-# Supabase configuration (replace with your actual values)
-SUPABASE_URL = "https://tgendmgdrljuxxxyynpz.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+# Supabase configuration
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Initialize Supabase client
 if SUPABASE_AVAILABLE and SUPABASE_URL != "YOUR_SUPABASE_URL_HERE":
@@ -29,95 +35,16 @@ else:
     SUPABASE_CONFIGURED = False
 
 
-def get_sample_accubid_data():
-    """Get sample AccuBid data for testing"""
-    sample_data = [
-        {"duration_hours": None, "task_name": " || CCTV - PATHWAYS", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - SHARED SPACE", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || LIGHTING - SITE", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - MAIN SERVICE WEST (2000A)", "time_estimate": "61.91", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || SITE - EV CHARGING", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || GENERAL EXPENSES", "time_estimate": "8000", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || AREA - EAST SUITES", "time_estimate": "25600", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - EAST SUITES", "time_estimate": "25600", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || GENERATOR", "time_estimate": "97", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || GENERAL EXPENSES", "time_estimate": "8000", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - LS EAST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || EQUIPMENT - EAST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || COMMUNICATIONS - PATHWAYS", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || EQUIPMENT - WEST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || COMMUNICATIONS - PATHWAYS", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - NORMAL EAST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || ENGINEERING", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || MECHANICAL - WEST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || PRIMARY DUCT BANK", "time_estimate": "359.3", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NORMAL WEST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || SITE - EV CHARGING", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || SECURITY - PATHWAYS", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - LS WEST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || EQUIPMENT - EAST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || PA SYSTEM", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || MECHANICAL - EAST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || CCTV - PATHWAYS", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || AREA - SHARED SPACE", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - WEST SUITES", "time_estimate": "25600.01", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - MAIN SERVICE EAST (2000A)", "time_estimate": "61.91", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - MAIN SERVICE EAST (2000A)", "time_estimate": "61.91", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || FIRE ALARM SYSTEM", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - WEST GENERAL", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - LS EAST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": "EVERYTHING", "time_estimate": "102631.99", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - EAST GENERAL", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || PRIMARY DUCT BANK", "time_estimate": "359.3", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - WEST GENERAL", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NORMAL EAST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || NURSE CALL SYSTEM (CONDUIT RI)", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - MAIN SERVICE WEST (2000A)", "time_estimate": "61.91", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || FIRE ALARM SYSTEM", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || LIGHTING - SITE", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || AREA - EAST GENERAL", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || PA SYSTEM", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || NURSE CALL SYSTEM (CONDUIT RI)", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NLS WEST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || SECONDARY DUCT BANK", "time_estimate": "585.79", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || ATS", "time_estimate": "64", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NLS WEST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || MECHANICAL - WEST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || EQUIPMENT - WEST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NLS EAST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - LS WEST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": "EVERYTHING", "time_estimate": "102631.99", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || AREA - WEST SUITES", "time_estimate": "25600.01", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || GENERATOR", "time_estimate": "97", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || MECHANICAL - EAST", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || SECONDARY DUCT BANK", "time_estimate": "585.79", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || SECURITY - PATHWAYS", "time_estimate": "0", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": None, "task_name": " || DIST - NORMAL WEST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || DIST - NLS EAST", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || ENGINEERING", "time_estimate": "0", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || COMMUNICATION DUCT BANK", "time_estimate": "105.36", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || ATS", "time_estimate": "64", "job_name": "Schelgel"},
-        {"duration_hours": None, "task_name": " || COMMUNICATION DUCT BANK", "time_estimate": "105.36", "job_name": "LEESWOOD - East Penn"},
-        {"duration_hours": "16.8833333333333333", "task_name": "Fire Alarm", "time_estimate": "36000", "job_name": "LEESWOOD - East Penn"}
-    ]
-    
-    # Convert to DataFrame and process data types
-    df = pd.DataFrame(sample_data)
-    df['time_estimate'] = pd.to_numeric(df['time_estimate'], errors='coerce')
-    df['duration_hours'] = pd.to_numeric(df['duration_hours'], errors='coerce')
-    
-    return df
+def get_empty_dataframe():
+    """Return empty DataFrame with expected columns"""
+    return pd.DataFrame(columns=['task_name', 'time_estimate', 'duration_hours', 'job_name'])
 
 def fetch_task_hours_data(limit=100, offset=0, jobcode_id=None, job_name=None):
     """Fetch task hours data from API"""
     try:
-        # For demo purposes, return sample data
+        # Return empty data if Supabase not configured
         if not SUPABASE_CONFIGURED:
-            df = get_sample_accubid_data()
-            # Filter by job name if specified
-            if job_name and job_name != "All Projects":
-                df = df[df['job_name'] == job_name]
-            return df
+            return get_empty_dataframe()
             
         # Fetch task estimate list data
         if SUPABASE_CONFIGURED:
@@ -145,37 +72,17 @@ def fetch_task_hours_data(limit=100, offset=0, jobcode_id=None, job_name=None):
                     df = pd.DataFrame(response.data)
                     return df
                 else:
-                    df = get_sample_accubid_data()
-                    # Filter by job name if specified
-                    if job_name and job_name != "All Projects":
-                        df = df[df['job_name'] == job_name]
-                    return df
+                    return get_empty_dataframe()
             except Exception as e:
-                df = get_sample_accubid_data()
-                # Filter by job name if specified
-                if job_name and job_name != "All Projects":
-                    df = df[df['job_name'] == job_name]
-                return df
+                return get_empty_dataframe()
         else:
-            df = get_sample_accubid_data()
-            # Filter by job name if specified
-            if job_name and job_name != "All Projects":
-                df = df[df['job_name'] == job_name]
-            return df
+            return get_empty_dataframe()
 
             
     except requests.exceptions.ConnectionError:
-        df = get_sample_accubid_data()
-        # Filter by job name if specified
-        if job_name and job_name != "All Projects":
-            df = df[df['job_name'] == job_name]
-        return df
+        return get_empty_dataframe()
     except Exception as e:
-        df = get_sample_accubid_data()
-        # Filter by job name if specified
-        if job_name and job_name != "All Projects":
-            df = df[df['job_name'] == job_name]
-        return df
+        return get_empty_dataframe()
 
 def fetch_available_jobcodes():
     """Fetch available job codes with names for dropdown"""
@@ -683,26 +590,8 @@ def build_task_progress_table(selected_job_name=None):
     Progress % = (Actual_Hours / Estimated_Hours) * 100
     """
     if not SUPABASE_CONFIGURED:
-        # Fallback using available dataframe construction
-        df = get_sample_accubid_data()
-        if selected_job_name and selected_job_name != "All Projects":
-            df = df[df["job_name"] == selected_job_name]
-
-        # Prefer EVERYTHING rows for estimate; if none, sum all
-        def estimate_for_job(group: pd.DataFrame) -> float:
-            everything = group[group["task_name"].str.contains("EVERYTHING", case=False, na=False)]
-            if not everything.empty:
-                return float(pd.to_numeric(everything["time_estimate"], errors="coerce").fillna(0).sum())
-            return float(pd.to_numeric(group["time_estimate"], errors="coerce").fillna(0).sum())
-
-        est_by_job = df.groupby("job_name").apply(estimate_for_job).reset_index(name="Estimated_Hours")
-        est_by_job["Actual_Hours"] = 0.0
-        est_by_job["Completion_%"] = np.where(
-            est_by_job["Estimated_Hours"] > 0,
-            (est_by_job["Actual_Hours"] / est_by_job["Estimated_Hours"]) * 100,
-            0.0,
-        )
-        return est_by_job
+        # Return empty DataFrame when Supabase not configured
+        return pd.DataFrame(columns=["job_name", "Estimated_Hours", "Actual_Hours", "Completion_%"])
 
     # Supabase path
     try:
@@ -883,11 +772,19 @@ def main():
  
     
     with col3:
-        # Create job name dropdown from sample data
-        job_names = ["All Projects", "Schelgel", "LEESWOOD - East Penn"]
-        selected_job_name = st.selectbox("Select Job/Client", job_names)
+    # Create job name dropdown from available data
+        job_names = ["All Projects"]
+        if SUPABASE_CONFIGURED:
+            try:
+                available_jobs = fetch_available_jobcodes()
+                if available_jobs:
+                    job_names.extend([job[0] for job in available_jobs])
+            except Exception:
+                pass
         
-        # For now, we'll use job name filtering instead of job code ID
+        selected_job_name = st.selectbox("Select Job/Client", job_names)
+            
+            # For now, we'll use job name filtering instead of job code ID
         jobcode_id = None
     
     with col4:
@@ -905,14 +802,22 @@ def main():
     if progress_df is not None and not progress_df.empty:
         st.dataframe(progress_df, use_container_width=True)
     else:
-        st.info("No progress data available for the selected filter.")
+        st.info("📈 No progress data available yet.")
+        if not SUPABASE_CONFIGURED:
+            st.info("💡 Configure Supabase to enable progress tracking features.")
+        else:
+            st.info("💡 Progress data will appear once tasks are created and time tracking begins.")
 
     # Fetch data
     with st.spinner("Loading task hours data..."):
         df = fetch_task_hours_data(limit=1000, offset=0, jobcode_id=jobcode_id, job_name=selected_job_name)
     
     if df.empty:
-        st.warning("No task data found for the selected project.")
+        st.info("📊 No task data available for the selected project.")
+        if not SUPABASE_CONFIGURED:
+            st.info("💡 To view data, please configure Supabase connection in your environment settings.")
+        else:
+            st.info("💡 Data may not be available yet. Check if AccuBid data has been imported to the database.")
         return
     
     
@@ -934,7 +839,8 @@ def main():
             st.subheader("📋 Job Details - EVERYTHING Tasks")
             st.dataframe(job_data, use_container_width=True)
     else:
-        st.warning("No 'EVERYTHING' tasks found for the selected project.") 
+        st.info("📋 No 'EVERYTHING' tasks found for the selected project.")
+        st.info("💡 EVERYTHING tasks represent the total project estimates. They will appear once AccuBid data is imported.") 
     
    
   
@@ -1032,28 +938,37 @@ def main():
                                             st.success(f"Progress: {new_progress}%")
                                             st.rerun()  # Refresh the page to show updated data
                                         else:
-                                            st.error("❌ Failed to update foreman progress")
+                                            st.info("💾 Progress update was not saved. Please try again.")
                                     except Exception as e:
-                                        st.error(f"❌ Error updating foreman progress: {str(e)}")
+                                        st.info("💾 Unable to save progress at this time. Please check your connection and try again.")
                         else:
-                            st.info("No tasks found for the selected job.")
+                            st.info("📋 No tasks found for the selected job.")
+                            st.info("💡 Tasks will appear once AccuBid data is imported for this project.")
                     else:
-                        st.info("No tasks found for the selected job.")
+                        st.info("📋 No tasks found for the selected job.")
+                        st.info("💡 Tasks will appear once AccuBid data is imported for this project.")
                 except Exception as e:
-                    st.error(f"Error loading tasks: {str(e)}")
+                    st.info("📋 Unable to load tasks at this time.")
+                    st.info("💡 Please check your database connection and try again.")
             
             # Save progress button (only when a specific job is selected)
             if SUPABASE_CONFIGURED and selected_job_name != "All Projects":
                 if st.button("💾 Save Task Progress to Database", key="save_task_progress"):
                     with st.spinner("Saving progress to task_progress..."):
                         result = save_task_progress_rows(task_data, selected_job_name)
-                    st.success(f"Saved: {result.get('inserted',0)} | Skipped: {result.get('skipped',0)} | Errors: {result.get('errors',0)}")
+                    if result.get('inserted', 0) > 0:
+                        st.success(f"✅ Progress saved: {result.get('inserted',0)} tasks updated")
+                    if result.get('skipped', 0) > 0:
+                        st.info(f"⏭️ Skipped: {result.get('skipped',0)} tasks (no matching data)")
+                    if result.get('errors', 0) > 0:
+                        st.info(f"⚠️ Issues: {result.get('errors',0)} tasks could not be saved")
             elif not SUPABASE_CONFIGURED:
-                st.info("Supabase not configured. Progress saving is disabled.")
+                st.info("💾 Progress saving requires Supabase configuration.")
             else:
-                st.info("Select a specific job to enable saving progress.")
+                st.info("💾 Select a specific job to enable progress saving features.")
     else:
-        st.warning("No actual task data found (excluding EVERYTHING tasks).")
+        st.info("📊 No individual task data available yet.")
+        st.info("💡 Individual task breakdowns will appear once AccuBid data is imported and processed.")
     
     # Progress Analysis Section
     st.markdown("---")
@@ -1085,7 +1000,7 @@ def main():
         - **Progress Difference**: Foreman % - Actual Completion %
         """)
     else:
-        st.write("No progress analysis data available")
+        st.info("⚡ Progress analysis will be available once both foreman progress and actual completion data are present.")
     
     # Variance Analysis - Use actual tasks data
     st.markdown("---")
@@ -1098,9 +1013,9 @@ def main():
             if variance_fig:
                 st.plotly_chart(variance_fig, use_container_width=True)
             else:
-                st.write("No variance data available")
+                st.info("📊 Variance analysis will be available once task data is loaded.")
         else:
-            st.write("No actual task data available for variance analysis")
+            st.info("📊 Variance analysis requires individual task data to be available.")
     
     with col2:
         st.subheader("📊 Efficiency Analysis - Actual Tasks")
@@ -1109,9 +1024,9 @@ def main():
             if efficiency_fig:
                 st.plotly_chart(efficiency_fig, use_container_width=True)
             else:
-                st.write("No efficiency data available")
+                st.info("📊 Efficiency analysis will be available once task data is loaded.")
         else:
-            st.write("No actual task data available for efficiency analysis")
+            st.info("📊 Efficiency analysis requires individual task data to be available.")
     
     # Raw Data Display
     st.markdown("---")

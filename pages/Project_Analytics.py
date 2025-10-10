@@ -43,8 +43,8 @@ def calculate_efficiency_score_with_accubid(project_name, actual_hours, avg_hour
     """
     try:
         # Initialize Supabase connection
-        supabase_url = "https://tgendmgdrljuxxxyynpz.supabase.co"
-        supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
         supabase = create_client(supabase_url, supabase_key)
         
         # Get Accubid breakdown data for the project, excluding the special task "EVERYTHING"
@@ -107,9 +107,17 @@ st.set_page_config(
     layout="wide"
 )
 
- # Query the users table for users where status is 'isactive'
-SUPABASE_URL = "https://tgendmgdrljuxxxyynpz.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnZW5kbWdkcmxqdXh4eHl5bnB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1MjM5MTcsImV4cCI6MjA3MjA5OTkxN30.U6ntaBcINvgUH-UOOybhaUHvuIDfenSDzvgH5OQA3S4"
+# Supabase configuration
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Query the users table for users where status is 'isactive'
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Custom CSS for project analytics with dual data sources
 st.markdown("""
@@ -1240,7 +1248,7 @@ def main():
                                         else:
                                             st.info("No estimated hours found to compute performance trend.")
                                     except Exception as e:
-                                        st.error(f"Error building progress trend: {e}")
+                                        st.info(f"No data found in related table")
                                 
                                 # Show progress summary
                                 col1, col2, col3 = st.columns(3)
