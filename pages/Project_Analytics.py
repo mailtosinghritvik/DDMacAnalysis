@@ -48,7 +48,7 @@ def calculate_efficiency_score_with_accubid(project_name, actual_hours, avg_hour
         supabase = create_client(supabase_url, supabase_key)
         
         # Get Accubid breakdown data for the project, excluding the special task "EVERYTHING"
-        response = supabase.table('accubid_breakdowns').select('*').eq('job_name', project_name).neq('Task_name', 'EVERYTHING').execute()
+        response = supabase.table('accubid_breakdowns').select('*').eq('job_name', project_name).neq('task_name', 'EVERYTHING').execute()
         
         if response.data:
             # Calculate total estimated hours from Accubid breakdown (excluding "EVERYTHING" task)
@@ -690,7 +690,7 @@ def get_foreman_performance_data():
         actual_data = pd.DataFrame(timesheets_result.data) if timesheets_result.data else pd.DataFrame()
         
         # Get estimated hours from accubid_breakdowns
-        estimates_result = supabase.table('accubid_breakdowns').select('job_name, Task_name, time_estimate, cost_estimate').neq('Task_name', 'EVERYTHING').execute()
+        estimates_result = supabase.table('accubid_breakdowns').select('job_name, task_name, time_estimate, cost_estimate').neq('task_name', 'EVERYTHING').execute()
         estimates_data = pd.DataFrame(estimates_result.data) if estimates_result.data else pd.DataFrame()
         
         # Get jobcode names
@@ -1122,9 +1122,9 @@ def main():
                                         est_res = (
                                             supabase
                                             .table('accubid_breakdowns')
-                                            .select('time_estimate, Task_name')
+                                            .select('time_estimate, task_name')
                                             .eq('job_name', project_name)
-                                            .neq('Task_name', 'EVERYTHING')
+                                            .neq('task_name', 'EVERYTHING')
                                             .execute()
                                         )
                                         estimated_hours_ts = 0.0

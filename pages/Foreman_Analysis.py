@@ -90,7 +90,7 @@ def get_projects_data():
 def get_tasks_data():
     """Fetch tasks data from accubid_breakdowns table"""
     try:
-        result = supabase.table('accubid_breakdowns').select('id, Task_name, job_name').execute()
+        result = supabase.table('accubid_breakdowns').select('id, task_name, job_name').execute()
         if result.data:
             return pd.DataFrame(result.data)
         else:
@@ -343,7 +343,7 @@ def main():
                     
                     if not filtered_tasks.empty:
                         # Task selection for the selected job
-                        task_options = {f"{row['Task_name']} (ID: {row['id']})": row['id'] for _, row in filtered_tasks.iterrows()}
+                        task_options = {f"{row['task_name']} (ID: {row['id']})": row['id'] for _, row in filtered_tasks.iterrows()}
                         selected_task = st.selectbox(
                             f"Select Task for '{selected_job}':",
                             options=list(task_options.keys()),
@@ -356,7 +356,7 @@ def main():
                 else:
                     st.warning("No job names found in the data")
                     # Fallback to original task selection
-                    task_options = {f"{row['Task_name']} (ID: {row['id']})": row['id'] for _, row in tasks_df.iterrows()}
+                    task_options = {f"{row['task_name']} (ID: {row['id']})": row['id'] for _, row in tasks_df.iterrows()}
                     selected_task = st.selectbox(
                         "Select Task:",
                         options=list(task_options.keys()),
@@ -366,7 +366,7 @@ def main():
             else:
                 st.warning("No job_name column found. Showing all tasks.")
                 # Fallback to original task selection
-                task_options = {f"{row['Task_name']} (ID: {row['id']})": row['id'] for _, row in tasks_df.iterrows()}
+                task_options = {f"{row['task_name']} (ID: {row['id']})": row['id'] for _, row in tasks_df.iterrows()}
                 selected_task = st.selectbox(
                     "Select Task:",
                     options=list(task_options.keys()),

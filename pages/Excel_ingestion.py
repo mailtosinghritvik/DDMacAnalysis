@@ -246,7 +246,7 @@ def generate_upload_preview(data, job_name, client_name):
                 preview_records.append({
                     "job_name": job_name,
                     "client_name": client_name,
-                    "Task_name": "EVERYTHING",
+                    "task_name": "EVERYTHING",
                     "time_estimate": labor_hours,
                     "cost_estimate": final_price
                 })
@@ -255,7 +255,7 @@ def generate_upload_preview(data, job_name, client_name):
                 preview_records.append({
                     "job_name": job_name,
                     "client_name": client_name,
-                    "Task_name": "EVERYTHING",
+                    "task_name": "EVERYTHING",
                     "time_estimate": f"Error: {str(e)}",
                     "cost_estimate": f"Error: {str(e)}"
                 })
@@ -292,7 +292,7 @@ def generate_upload_preview(data, job_name, client_name):
             preview_records.append({
                 "job_name": job_name,
                 "client_name": client_name,
-                "Task_name": system,
+                "task_name": system,
                 "time_estimate": time_est,
                 "cost_estimate": cost_est
             })
@@ -327,7 +327,7 @@ def upload_to_supabase(data, job_name, client_name):
                     records.append({
                         "job_name": job_name,
                         "client_name": client_name,
-                        "Task_name": "EVERYTHING",
+                        "task_name": "EVERYTHING",
                         "time_estimate": labor_hours,
                         "cost_estimate": final_price
                     })
@@ -366,7 +366,7 @@ def upload_to_supabase(data, job_name, client_name):
                 records.append({
                     "job_name": job_name,
                     "client_name": client_name,
-                    "Task_name": system,
+                    "task_name": system,
                     "time_estimate": time_est,
                     "cost_estimate": cost_est
                 })
@@ -673,8 +673,8 @@ def main():
                         st.info(f"📊 **Total Records to Upload:** {len(preview_records)}")
                         
                         # Break down by type
-                        everything_count = len([r for r in preview_records if r['Task_name'] == 'EVERYTHING'])
-                        system_count = len([r for r in preview_records if r['Task_name'] != 'EVERYTHING'])
+                        everything_count = len([r for r in preview_records if r['task_name'] == 'EVERYTHING'])
+                        system_count = len([r for r in preview_records if r['task_name'] != 'EVERYTHING'])
                         
                         col_preview1, col_preview2 = st.columns(2)
                         with col_preview1:

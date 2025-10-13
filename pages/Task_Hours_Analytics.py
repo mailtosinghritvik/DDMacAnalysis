@@ -266,7 +266,7 @@ def get_foreman_progress_for_tasks(task_data: pd.DataFrame, selected_job_name: s
         # Get task IDs from accubid_breakdowns for the selected job
         abd_res = (
             supabase.table("accubid_breakdowns")
-            .select("id, Task_name, job_name")
+            .select("id, task_name, job_name")
             .eq("job_name", selected_job_name)
             .execute()
         )
@@ -277,7 +277,7 @@ def get_foreman_progress_for_tasks(task_data: pd.DataFrame, selected_job_name: s
         # Create mapping from task_name to task_id
         task_name_to_id = {}
         for row in abd_res.data:
-            task_name = row.get("Task_name")
+            task_name = row.get("task_name")
             task_id = row.get("id")
             if task_name and task_id is not None:
                 task_name_to_id[task_name] = task_id
@@ -341,14 +341,14 @@ def save_task_progress_rows(task_data: pd.DataFrame, selected_job_name: str) -> 
         # Map task_name -> accubid_breakdowns.id within the selected job
         abd_res = (
             supabase.table("accubid_breakdowns")
-            .select("id, Task_name, job_name")
+            .select("id, task_name, job_name")
             .eq("job_name", selected_job_name)
             .execute()
         )
         mapping = {}
         if abd_res and abd_res.data:
             for row in abd_res.data:
-                tname = row.get("Task_name")
+                tname = row.get("task_name")
                 tid = row.get("id")
                 if tname and tid is not None:
                     # If duplicates, keep first
@@ -870,7 +870,7 @@ def main():
                 try:
                     abd_res = (
                         supabase.table("accubid_breakdowns")
-                        .select("id, Task_name")
+                        .select("id, task_name")
                         .eq("job_name", selected_job_name)
                         .execute()
                     )
@@ -879,7 +879,7 @@ def main():
                         # Create task selection dropdown
                         task_options = {}
                         for row in abd_res.data:
-                            task_name = row.get("Task_name")
+                            task_name = row.get("task_name")
                             task_id = row.get("id")
                             if task_name and task_id is not None:
                                 task_options[f"{task_name} (ID: {task_id})"] = task_id
