@@ -1,7 +1,14 @@
 import streamlit as st
 import os
 import tempfile
-from openai import OpenAI
+import requests
+import json
+import smtplib
+from email.message import EmailMessage
+from fpdf import FPDF
+# Perplexity functions are now imported from utils.perplexity_client
+
+
 
 # Basic imports
 from datetime import datetime, timedelta
@@ -9,8 +16,11 @@ from datetime import datetime, timedelta
 # Import database handler
 from utils.supabase_queries import get_supabase_handler
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Import Perplexity client
+from utils.perplexity_client import get_perplexity_client
+
+# Initialize Perplexity client
+client = get_perplexity_client()
 
 # Initialize session state (following Home.py pattern)
 if 'ai_assistant_id' not in st.session_state:
@@ -29,52 +39,171 @@ if 'proceed_with_ai_generation' not in st.session_state:
     st.session_state.proceed_with_ai_generation = False
 if 'report_results' not in st.session_state:
     st.session_state.report_results = []
+if 'ai_pdf_bytes' not in st.session_state:
+    st.session_state.ai_pdf_bytes = None
+if 'ai_pdf_path' not in st.session_state:
+    st.session_state.ai_pdf_path = None
+
+
+def _sanitize_text_for_pdf(text: str) -> str:
+    """Sanitize text for FPDF (latin-1) output to avoid encoding errors."""
+    try:
+        if not isinstance(text, str):
+            text = str(text)
+        return text.encode('latin-1', 'replace').decode('latin-1')
+    except Exception:
+        return str(text)
+
+
+def generate_pdf_from_markdown(markdown_content: str, title: str = "Analytics Report") -> bytes:
+    """Generate a simple PDF from markdown content locally using FPDF.
+
+    This is a lightweight renderer: headings, paragraphs, and bullet lists.
+    """
+    def _soft_wrap_long_tokens(s: str, max_len: int = 60) -> str:
+        # Break very long tokens (e.g., URLs, long numbers) to avoid width errors
+        parts = []
+        for token in s.split(' '):
+            if len(token) > max_len:
+                chunks = [token[i:i+max_len] for i in range(0, len(token), max_len)]
+                parts.append(' '.join(chunks))
+            else:
+                parts.append(token)
+        return ' '.join(parts)
+
+    pdf = FPDF(format='Letter', unit='pt')
+    pdf.set_margins(36, 36, 36)
+    pdf.set_auto_page_break(auto=True, margin=48)
+    pdf.add_page()
+
+    # Title
+    epw = getattr(pdf, 'epw', pdf.w - pdf.l_margin - pdf.r_margin)
+    pdf.set_font("Arial", "B", 18)
+    pdf.multi_cell(epw, 24, _sanitize_text_for_pdf(_soft_wrap_long_tokens(title, 40)))
+    pdf.ln(6)
+
+    # Normalize content: collapse excessive blank lines
+    raw_lines = markdown_content.splitlines()
+    lines = []
+    blank_streak = 0
+    for raw in raw_lines:
+        s = raw.rstrip()
+        if not s.strip():
+            blank_streak += 1
+            if blank_streak <= 1:
+                lines.append("")
+        else:
+            blank_streak = 0
+            lines.append(s)
+    for raw in lines:
+        line = raw.rstrip()
+
+        if not line.strip():
+            pdf.ln(6)
+            continue
+
+        if line.startswith("### "):
+            pdf.set_font("Arial", "B", 12)
+            pdf.multi_cell(epw, 16, _sanitize_text_for_pdf(_soft_wrap_long_tokens(line[4:], 60)))
+            pdf.ln(2)
+        elif line.startswith("## "):
+            pdf.set_font("Arial", "B", 14)
+            pdf.multi_cell(epw, 18, _sanitize_text_for_pdf(_soft_wrap_long_tokens(line[3:], 60)))
+            pdf.ln(4)
+        elif line.startswith("# "):
+            pdf.set_font("Arial", "B", 16)
+            pdf.multi_cell(epw, 20, _sanitize_text_for_pdf(_soft_wrap_long_tokens(line[2:], 60)))
+            pdf.ln(6)
+        elif line.lstrip().startswith(("- ", "* ")):
+            bullet_text = line.lstrip()[2:]
+            pdf.set_font("Arial", "", 11)
+            # Draw bullet and indent text for the remaining width
+            # Use ASCII dash for maximum font compatibility
+            pdf.set_x(pdf.l_margin)
+            pdf.cell(14, 14, "-")
+            pdf.multi_cell(epw - 14, 14, _sanitize_text_for_pdf(_soft_wrap_long_tokens(bullet_text, 60)))
+            pdf.ln(2)
+        else:
+            pdf.set_font("Arial", "", 11)
+            pdf.multi_cell(epw, 16, _sanitize_text_for_pdf(_soft_wrap_long_tokens(line, 80)))
+
+    # Return PDF bytes
+    raw = pdf.output(dest='S')
+    # fpdf2 may return str, bytes, or bytearray depending on version
+    if isinstance(raw, bytearray):
+        return bytes(raw)
+    if isinstance(raw, bytes):
+        return raw
+    # Fallback: encode string to latin-1
+    return str(raw).encode('latin-1', 'ignore')
+
+
+def send_pdf_via_email(recipient_email: str, subject: str, body: str, pdf_bytes: bytes, filename: str) -> None:
+    """Send a PDF via SMTP using environment variables if available.
+    Required env vars: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
+    """
+    smtp_host = os.getenv('SMTP_HOST')
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    smtp_user = os.getenv('SMTP_USER')
+    smtp_pass = os.getenv('SMTP_PASSWORD')
+    mail_from = os.getenv('SMTP_FROM', smtp_user or '')
+
+    if not (smtp_host and smtp_user and smtp_pass and mail_from):
+        raise RuntimeError("SMTP not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM.")
+
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = mail_from
+    msg['To'] = recipient_email
+    msg.set_content(body)
+    msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=filename)
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+
+
+def save_pdf_to_disk(pdf_bytes: bytes, filename: str) -> str:
+    """Save PDF bytes to disk under temp/ai_reports and return the absolute path."""
+    reports_dir = os.path.join(os.getcwd(), 'temp', 'ai_reports')
+    os.makedirs(reports_dir, exist_ok=True)
+    file_path = os.path.join(reports_dir, filename)
+    with open(file_path, 'wb') as f:
+        f.write(pdf_bytes)
+    return file_path
 
 def create_ai_report_assistant(markdown_content, report_type, report_name):
-    """Create a dedicated Assistant for generating comprehensive PDF reports (following Home.py pattern exactly)"""
+    """Create a dedicated Assistant for generating comprehensive PDF reports"""
     try:
         # Create a markdown file for the assistant
         temp_path = os.path.join(tempfile.gettempdir(), f"{report_name.replace(' ', '_')}_report.md")
         with open(temp_path, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
-        # Upload markdown file to OpenAI
-        with open(temp_path, "rb") as f:
-            file_obj = client.files.create(
-                file=f,
-                purpose='assistants'
-            )
+        # Upload markdown file to Perplexity
+        file_obj = client.upload_file(temp_path, 'assistants')
 
         # Clean up temp file
         os.remove(temp_path)
         
-        # Create Assistant with simpler description (following Home.py pattern)
+        # Create Assistant with Perplexity
         assistant_name = f"DDMac Bot - {report_name} Analyzer"
         assistant_description = f"""DDMac Bot expert for {report_type.lower()} analytics and PDF generation.
 
 Report: {report_name} | Type: {report_type}
 
-Analyzes report data and creates professional PDFs with visualizations. Uses code interpreter for calculations and document generation."""
+Analyzes report data and creates professional PDFs with visualizations. Specializes in electrical estimation and construction project analytics."""
 
-        assistant = client.beta.assistants.create(
-            name=assistant_name,
-            description=assistant_description,
-            model="gpt-4o",
-            tools=[{"type": "code_interpreter"}],
-            tool_resources={
-                "code_interpreter": {
-                    "file_ids": [file_obj.id]
-                }
-            }
-        )
+        assistant = client.create_assistant(assistant_name, assistant_description)
         
         # Create a thread
-        thread = client.beta.threads.create()
+        thread = client.create_thread()
         
-        return assistant.id, thread.id, file_obj.id, "AI Report Assistant created successfully"
+        return assistant["id"], thread["id"], file_obj["id"], "Perplexity AI Report Assistant created successfully"
         
     except Exception as e:
-        return None, None, None, f"Error creating AI assistant: {str(e)}"
+        return None, None, None, f"Error creating Perplexity AI assistant: {str(e)}"
 
 # Import utility functions for report generation
 from utils.report_generators import (
@@ -492,13 +621,31 @@ def main():
                     st.markdown("### 📊 Generated User Analytics Report")
                     st.markdown(user_markdown)
                     
-                    # Add download button for the report
-                    st.download_button(
-                        label="📥 Download Report as Markdown",
-                        data=user_markdown,
-                        file_name=f"user_analytics_report_{config.get('selected_user', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
-                        mime="text/markdown"
-                    )
+                    # Download buttons: Markdown and local PDF
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Download Markdown",
+                            data=user_markdown,
+                            file_name=f"user_analytics_report_{config.get('selected_user', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
+                            mime="text/markdown",
+                            key=f"user_md_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                        )
+                    with col_dl2:
+                        try:
+                            pdf_bytes = generate_pdf_from_markdown(
+                                user_markdown,
+                                title=f"User Analytics Report - {config.get('selected_user', 'Unknown')}"
+                            )
+                            st.download_button(
+                                label="📄 Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"user_analytics_report_{config.get('selected_user', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.pdf",
+                                mime="application/pdf",
+                                key=f"user_pdf_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                            )
+                        except Exception as pdf_err:
+                            st.warning(f"PDF generation issue: {pdf_err}")
                 
             elif config['report_type'] == "Client Report":
                 st.info(f"Generating Project Analytics Report for: {config.get('selected_client', 'Unknown')}")
@@ -518,13 +665,30 @@ def main():
                     st.markdown("### 📊 Generated Client Analytics Report")
                     st.markdown(project_markdown)
                     
-                    # Add download button for the report
-                    st.download_button(
-                        label="📥 Download Report as Markdown",
-                        data=project_markdown,
-                        file_name=f"client_analytics_report_{config.get('selected_client', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
-                        mime="text/markdown"
-                    )
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Download Markdown",
+                            data=project_markdown,
+                            file_name=f"client_analytics_report_{config.get('selected_client', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
+                            mime="text/markdown",
+                            key=f"client_md_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                        )
+                    with col_dl2:
+                        try:
+                            pdf_bytes = generate_pdf_from_markdown(
+                                project_markdown,
+                                title=f"Client Analytics Report - {config.get('selected_client', 'Unknown')}"
+                            )
+                            st.download_button(
+                                label="📄 Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"client_analytics_report_{config.get('selected_client', 'unknown').replace(' ', '_')}_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.pdf",
+                                mime="application/pdf",
+                                key=f"client_pdf_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                            )
+                        except Exception as pdf_err:
+                            st.warning(f"PDF generation issue: {pdf_err}")
                 
             elif config['report_type'] == "Time Report":
                 st.info("Generating Time Analytics Report")
@@ -543,37 +707,111 @@ def main():
                     st.markdown("### 📊 Generated Time Analytics Report")
                     st.markdown(time_markdown)
                     
-                    # Add download button for the report
-                    st.download_button(
-                        label="📥 Download Report as Markdown",
-                        data=time_markdown,
-                        file_name=f"time_analytics_report_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
-                        mime="text/markdown"
-                    )
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Download Markdown",
+                            data=time_markdown,
+                            file_name=f"time_analytics_report_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.md",
+                            mime="text/markdown",
+                            key=f"time_md_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                        )
+                    with col_dl2:
+                        try:
+                            pdf_bytes = generate_pdf_from_markdown(
+                                time_markdown,
+                                title=f"Time Analytics Report - {config['start_date'].strftime('%Y-%m-%d')} to {config['end_date'].strftime('%Y-%m-%d')}"
+                            )
+                            st.download_button(
+                                label="📄 Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"time_analytics_report_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}.pdf",
+                                mime="application/pdf",
+                                key=f"time_pdf_dl_{config['start_date'].strftime('%Y%m%d')}_{config['end_date'].strftime('%Y%m%d')}"
+                            )
+                        except Exception as pdf_err:
+                            st.warning(f"PDF generation issue: {pdf_err}")
             
             st.success("✅ Analytics functions triggered successfully!")
 
+    # Persistent download buttons whenever a report exists
+    if st.session_state.get('generated_markdown') and 'report_config' in st.session_state:
+        st.markdown("---")
+        st.markdown("### 📥 Download Your Report")
+        cfg = st.session_state['report_config']
+        md_content = st.session_state['generated_markdown']
+
+        # Derive filenames and titles based on report type
+        if cfg.get('report_type') == 'User Report':
+            base_name = f"user_analytics_report_{cfg.get('selected_user', 'unknown').replace(' ', '_')}_{cfg['start_date'].strftime('%Y%m%d')}_{cfg['end_date'].strftime('%Y%m%d')}"
+            pdf_title = f"User Analytics Report - {cfg.get('selected_user', 'Unknown')}"
+        elif cfg.get('report_type') == 'Client Report':
+            base_name = f"client_analytics_report_{cfg.get('selected_client', 'unknown').replace(' ', '_')}_{cfg['start_date'].strftime('%Y%m%d')}_{cfg['end_date'].strftime('%Y%m%d')}"
+            pdf_title = f"Client Analytics Report - {cfg.get('selected_client', 'Unknown')}"
+        else:
+            base_name = f"time_analytics_report_{cfg['start_date'].strftime('%Y%m%d')}_{cfg['end_date'].strftime('%Y%m%d')}"
+            pdf_title = f"Time Analytics Report - {cfg['start_date'].strftime('%Y-%m-%d')} to {cfg['end_date'].strftime('%Y-%m-%d')}"
+
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            st.download_button(
+                label="📄 Download Markdown",
+                data=md_content,
+                file_name=f"{base_name}.md",
+                mime="text/markdown",
+                key=f"persist_md_{base_name}"
+            )
+        with col_p2:
+            try:
+                pdf_bytes = generate_pdf_from_markdown(md_content, title=pdf_title)
+                st.download_button(
+                    label="📄 Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"{base_name}.pdf",
+                    mime="application/pdf",
+                    key=f"persist_pdf_{base_name}"
+                )
+            except Exception as e:
+                st.warning(f"PDF generation issue: {e}")
+
     # AI Report Generation Section (following Home.py pattern)
-    if st.session_state.generated_markdown and 'report_config' in st.session_state:
+    if st.session_state.generated_markdown and 'report_config' in st.session_state and client.is_configured():
         st.markdown("---")
         st.markdown("### 🤖 AI Enhanced PDF Report Generation")
         
+        # Add reset button for debugging
+        if st.button("🔄 Reset AI Status", help="Reset AI processing status to ready"):
+            st.session_state.ai_processing_status = 'ready'
+            st.session_state.proceed_with_ai_generation = False
+            st.session_state.ai_assistant_id = None
+            st.session_state.ai_thread_id = None
+            st.session_state.ai_chat_messages = []
+            st.session_state.pdf_generated = False
+            st.rerun()
+        
         config = st.session_state['report_config']
         
-        # Check if we need to show the AI button or if processing is already started
-        if st.session_state.ai_processing_status == 'ready':
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🤖 Generate AI Enhanced PDF Report", type="primary", use_container_width=True):
-                    st.session_state.proceed_with_ai_generation = True
-                    st.session_state.ai_processing_status = 'processing'
-                    st.rerun()
-            
-            with col2:
-                st.info("💡 AI Report will create a comprehensive PDF with visualizations and insights")
+        # Always show the AI button - simplified approach
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🤖 Generate AI Enhanced PDF Report", type="primary", use_container_width=True):
+            # Reset any previous state
+                st.session_state.ai_processing_status = 'processing'
+                st.session_state.proceed_with_ai_generation = True
+                st.session_state.ai_assistant_id = None
+                st.session_state.ai_thread_id = None
+                st.session_state.ai_chat_messages = []
+                st.session_state.pdf_generated = False
+                st.rerun()
+        
+        with col2:
+            st.info("💡 AI Report will create a comprehensive PDF with visualizations and insights")
+        
+        # Show current status for debugging
+        st.write(f"🔍 Current AI Status: {st.session_state.ai_processing_status}")
         
         # Processing AI Report (following Home.py pattern)
-        elif st.session_state.ai_processing_status == 'processing':
+        if st.session_state.ai_processing_status == 'processing':
             if st.session_state.proceed_with_ai_generation:
                 
                 # Create report name based on type
@@ -652,7 +890,7 @@ def main():
                     st.stop()
         
         # Show completed AI report results (following Home.py pattern)
-        elif st.session_state.ai_processing_status == 'complete':
+        if st.session_state.ai_processing_status == 'complete':
             st.success("🎉 AI Assistant Created Successfully!")
             
             # Display results
@@ -667,13 +905,29 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
             
-            # Auto-trigger initial PDF generation if not done yet
-            if not st.session_state.pdf_generated and not st.session_state.ai_chat_messages:
-                st.info("🤖 Use the 'Generate Initial PDF Report' button below to create your first comprehensive PDF report.")
-                st.info("💡 Then you can chat with the assistant to modify or enhance the report.")
+            # Auto-generate AI-enhanced PDF once after assistant setup
+            if st.session_state.ai_pdf_bytes is None:
+                st.info("🤖 Generating AI‑enhanced PDF content...")
+                try:
+                    enhanced_text = client.analyze_report_data(
+                        report_data=st.session_state.generated_markdown,
+                        report_type=config['report_type'],
+                        user_name=config.get('selected_user', config.get('selected_client', 'User'))
+                    )
+                    st.session_state.ai_pdf_bytes = generate_pdf_from_markdown(
+                        enhanced_text or st.session_state.generated_markdown,
+                        title=f"{config['report_type']} - AI Enhanced"
+                    )
+                    # Persist to disk so the file can be reused/sent
+                    base = config.get('report_type', 'Report').replace(' ', '_').lower()
+                    ai_pdf_name = f"{base}_ai_enhanced.pdf"
+                    st.session_state.ai_pdf_path = save_pdf_to_disk(st.session_state.ai_pdf_bytes, ai_pdf_name)
+                    st.success("✅ AI‑enhanced PDF ready to download.")
+                except Exception as ai_pdf_err:
+                    st.warning(f"AI PDF generation issue: {ai_pdf_err}")
 
     # AI Assistant Chat Interface (appears after PDF generation - following Home.py pattern)
-    if st.session_state.ai_assistant_id and st.session_state.ai_thread_id and st.session_state.ai_processing_status == 'complete':
+    if client.is_configured() and st.session_state.ai_assistant_id and st.session_state.ai_thread_id and st.session_state.ai_processing_status == 'complete':
         st.markdown("---")
         st.markdown("### 🤖 AI Report Assistant Chat")
         
@@ -701,9 +955,8 @@ def main():
                             for image_file_id in message['images']:
                                 try:
                                     # Download and display the image
-                                    image_data = client.files.content(image_file_id)
-                                    image_bytes = image_data.read()
-                                    st.image(image_bytes, caption=f"Generated visualization", use_column_width=True)
+                                    # Perplexity doesn't support file downloads
+                                    st.info("Image display not supported with Perplexity")
                                 except Exception as img_error:
                                     st.error(f"Could not display image {image_file_id}: {str(img_error)}")
                         
@@ -714,27 +967,44 @@ def main():
                                 try:
                                     file_id = file_info['file_id']
                                     # Get file info from OpenAI
-                                    file_obj = client.files.retrieve(file_id)
-                                    filename = file_obj.filename or f"generated_report_{i}.pdf"
-                                    
-                                    # Download file content
-                                    file_data = client.files.content(file_id)
-                                    file_bytes = file_data.read()
-                                    
-                                    # Create download button
-                                    st.download_button(
-                                        label=f"📥 Download {filename}",
-                                        data=file_bytes,
-                                        file_name=filename,
-                                        mime="application/pdf" if filename.endswith('.pdf') else "application/octet-stream",
-                                        key=f"download_file_{file_id}_{i}"
-                                    )
+                                    # Perplexity doesn't support file downloads
+                                    st.info("File download not supported with Perplexity")
                                     
                                 except Exception as file_error:
                                     st.error(f"Could not prepare download for file {file_info}: {str(file_error)}")
                     
                     st.markdown("---")
         
+        # AI PDF download and email send (optional)
+        st.markdown("#### 📥 Download AI‑Enhanced PDF")
+        if st.session_state.ai_pdf_bytes:
+            cfg = st.session_state.get('report_config', {})
+            base = cfg.get('report_type', 'Report').replace(' ', '_').lower()
+            ai_pdf_name = f"{base}_ai_enhanced.pdf"
+            st.download_button(
+                label="📄 Download AI Enhanced PDF",
+                data=st.session_state.ai_pdf_bytes,
+                file_name=ai_pdf_name,
+                mime="application/pdf",
+                key=f"ai_pdf_dl_{ai_pdf_name}"
+            )
+            if st.session_state.get('ai_pdf_path'):
+                st.caption(f"Saved to: {st.session_state.ai_pdf_path}")
+            with st.expander("✉️ Email this PDF"):
+                to_email = st.text_input("Recipient email", key="ai_pdf_email")
+                if st.button("Send Email", key="ai_pdf_send_btn"):
+                    try:
+                        send_pdf_via_email(
+                            recipient_email=to_email,
+                            subject="AI Enhanced Analytics Report",
+                            body="Please find the attached AI-enhanced analytics report.",
+                            pdf_bytes=st.session_state.ai_pdf_bytes,
+                            filename=ai_pdf_name
+                        )
+                        st.success("Email sent successfully.")
+                    except Exception as mail_err:
+                        st.error(f"Email send failed: {mail_err}")
+
         # Chat input (following Home.py pattern)
         st.markdown("#### ✍️ Ask about your report or generate PDF")
         
@@ -780,80 +1050,26 @@ def main():
             if message['role'] == 'user' and not message.get('processed', False):
                 with st.spinner(f"Assistant is working on: {message['content'][:50]}..."):
                     try:
-                        # Create message in the thread (exactly like Home.py)
-                        client.beta.threads.messages.create(
-                            thread_id=st.session_state.ai_thread_id,
-                            role="user",
-                            content=message['content']
+                        # Send message to Perplexity AI
+                        response = client.chat_with_data(
+                            user_message=message['content'],
+                            context_data=st.session_state.generated_markdown
                         )
                         
-                        # Run the assistant (exactly like Home.py)
-                        run = client.beta.threads.runs.create(
-                            thread_id=st.session_state.ai_thread_id,
-                            assistant_id=st.session_state.ai_assistant_id
-                        )
+                        # Store the response
+                        message_data = {
+                            'role': 'assistant', 
+                            'content': response,
+                            'images': None,
+                            'files': None
+                        }
                         
-                        # Wait for completion (with longer timeout for PDF generation)
-                        import time
-                        wait_count = 0
-                        max_wait = 120  # 2 minutes
-                        while run.status in ['queued', 'in_progress'] and wait_count < max_wait:
-                            time.sleep(2)
-                            run = client.beta.threads.runs.retrieve(
-                                thread_id=st.session_state.ai_thread_id, 
-                                run_id=run.id
-                            )
-                            wait_count += 1
+                        st.session_state.ai_chat_messages.append(message_data)
                         
-                        if run.status == 'completed': 
-                            # Get the assistant's response (exactly like Home.py)
-                            messages = client.beta.threads.messages.list(thread_id=st.session_state.ai_thread_id)
-                            
-                            # Process the message content (exactly like Home.py)
-                            assistant_content = ""
-                            images = []
-                            files = []
-                            
-                            for content_block in messages.data[0].content:
-                                if hasattr(content_block, 'text'):
-                                    text_value = content_block.text.value
-                                    assistant_content += text_value + "\n"
-                                    
-                                    if hasattr(content_block.text, 'annotations'):
-                                        for annotation in content_block.text.annotations:
-                                            if hasattr(annotation, 'file_path'):
-                                                file_id = annotation.file_path.file_id
-                                                files.append({
-                                                    'file_id': file_id,
-                                                    'filename': f"generated_report.pdf"
-                                                })
-                                                
-                                elif hasattr(content_block, 'image_file'):
-                                    file_id = content_block.image_file.file_id
-                                    images.append(file_id)
-                                    assistant_content += f"[Generated Image: file-{file_id}]\n"
-                            
-                            # Store the response (exactly like Home.py)
-                            message_data = {
-                                'role': 'assistant', 
-                                'content': assistant_content.strip(),
-                                'images': images if images else None,
-                                'files': files if files else None
-                            }
-                            
-                            st.session_state.ai_chat_messages.append(message_data)
-                            
-                            # Mark user message as processed
-                            st.session_state.ai_chat_messages[i]['processed'] = True
-                            
-                            # Mark PDF as generated if files were created
-                            if files:
-                                st.session_state.pdf_generated = True
-                            
-                            st.rerun()
-                        else:
-                            st.error(f"Assistant run failed with status: {run.status}")
-                            st.session_state.ai_chat_messages[i]['processed'] = True
+                        # Mark user message as processed
+                        st.session_state.ai_chat_messages[i]['processed'] = True
+                        
+                        st.rerun()
                             
                     except Exception as e:
                         st.error(f"Chat error: {str(e)}")

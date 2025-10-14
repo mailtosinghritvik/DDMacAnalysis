@@ -3,13 +3,106 @@
 Debug script to examine file annotation structures from OpenAI Assistant API
 This will help identify the correct way to extract file IDs for downloads.
 """
+def create_perplexity_assistant(name, description, model="llama-3.1-sonar-large-128k-online", tools=None):
+    """Create a Perplexity assistant"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "name": name,
+        "description": description,
+        "model": model,
+        "tools": tools or []
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/assistants", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create assistant: {response.text}")
+
+def create_perplexity_thread():
+    """Create a Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {"messages": []}
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create thread: {response.text}")
+
+def upload_file_to_perplexity(file_path, purpose="assistants"):
+    """Upload file to Perplexity"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}"
+    }
+    
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        data = {"purpose": purpose}
+        
+        response = requests.post(f"{PERPLEXITY_BASE_URL}/files", headers=headers, files=files, data=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to upload file: {response.text}")
+
+def send_perplexity_message(thread_id, message, file_ids=None):
+    """Send message to Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "role": "user",
+        "content": message
+    }
+    
+    if file_ids:
+        data["file_ids"] = file_ids
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/messages", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to send message: {response.text}")
+
+def run_perplexity_thread(thread_id, assistant_id):
+    """Run Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "assistant_id": assistant_id,
+        "thread_id": thread_id
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/runs", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to run thread: {response.text}")
+
+
 
 import os
 import json
-from openai import OpenAI
+import requests
+import json
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 
 def debug_message_annotations(thread_id, message_id):
     """Debug a specific message to see its annotation structure"""
@@ -67,7 +160,7 @@ def examine_file_structure():
     """Create a simple test to see how files are structured in annotations"""
     try:
         # Create a simple assistant with code interpreter
-        assistant = client.beta.assistants.create(
+        assistant = create_perplexity_assistant(
             name="File Debug Assistant",
             description="Assistant for debugging file annotations",
             model="gpt-4o",
@@ -75,7 +168,7 @@ def examine_file_structure():
         )
         
         # Create a thread
-        thread = client.beta.threads.create()
+        thread = create_perplexity_thread()
         
         # Add a message asking for a simple file
         message = client.beta.threads.messages.create(

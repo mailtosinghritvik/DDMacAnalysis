@@ -379,6 +379,11 @@ class SupabaseQueryHandler:
                 logger.warning("⚠️ No team comparison data found")
                 return []
             
+            # Debug logging to see what data is being returned
+            logger.info(f"🔍 Team comparison data for user {user_id}:")
+            for _, row in df.iterrows():
+                logger.info(f"  {row.get('metric_name', 'N/A')}: User={row.get('user_value', 0)}, Team={row.get('team_average', 0)}")
+            
             return df.to_dict('records')
             
         except Exception as e:

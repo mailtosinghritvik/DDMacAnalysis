@@ -2,14 +2,107 @@
 """
 Diagnostic script to test assistant creation and identify issues
 """
+def create_perplexity_assistant(name, description, model="llama-3.1-sonar-large-128k-online", tools=None):
+    """Create a Perplexity assistant"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "name": name,
+        "description": description,
+        "model": model,
+        "tools": tools or []
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/assistants", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create assistant: {response.text}")
+
+def create_perplexity_thread():
+    """Create a Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {"messages": []}
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create thread: {response.text}")
+
+def upload_file_to_perplexity(file_path, purpose="assistants"):
+    """Upload file to Perplexity"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}"
+    }
+    
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        data = {"purpose": purpose}
+        
+        response = requests.post(f"{PERPLEXITY_BASE_URL}/files", headers=headers, files=files, data=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to upload file: {response.text}")
+
+def send_perplexity_message(thread_id, message, file_ids=None):
+    """Send message to Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "role": "user",
+        "content": message
+    }
+    
+    if file_ids:
+        data["file_ids"] = file_ids
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/messages", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to send message: {response.text}")
+
+def run_perplexity_thread(thread_id, assistant_id):
+    """Run Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "assistant_id": assistant_id,
+        "thread_id": thread_id
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/runs", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to run thread: {response.text}")
+
+
 
 import os
 import tempfile
-from openai import OpenAI
+import requests
+import json
 import time
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 
 def test_assistant_creation_home_style():
     """Test assistant creation using Home.py style (with Excel file)"""
@@ -25,14 +118,13 @@ def test_assistant_creation_home_style():
         
         print(f"✅ Created test file: {temp_path}")
         
-        # Upload file to OpenAI
-        with open(temp_path, "rb") as f:
-            file_obj = client.files.create(
-                file=f,
-                purpose='assistants'
-            )
+        # Upload file to Perplexity
+        file_obj = upload_file_to_perplexity(
+            file_path=temp_path,
+            purpose='assistants'
+        )
         
-        print(f"✅ File uploaded to OpenAI: {file_obj.id}")
+        print(f"✅ File uploaded to Perplexity: {file_obj['id']}")
         
         # Clean up temp file
         os.remove(temp_path)
@@ -45,7 +137,7 @@ Project: Test Project | Company: Test Company | Type: Commercial
 
 Analyzes Excel data for costs, materials, labor, timelines. Uses code interpreter for calculations and data analysis."""
         
-        assistant = client.beta.assistants.create(
+        assistant = create_perplexity_assistant(
             name=assistant_name,
             description=assistant_description,
             model="gpt-4o",
@@ -60,7 +152,7 @@ Analyzes Excel data for costs, materials, labor, timelines. Uses code interprete
         print(f"✅ Assistant created successfully: {assistant.id}")
         
         # Create thread
-        thread = client.beta.threads.create()
+        thread = create_perplexity_thread()
         print(f"✅ Thread created successfully: {thread.id}")
         
         # Test a simple message
@@ -129,14 +221,13 @@ The data shows positive trends across all metrics.
         
         print(f"✅ Created test markdown file: {temp_path}")
         
-        # Upload markdown file to OpenAI
-        with open(temp_path, "rb") as f:
-            file_obj = client.files.create(
-                file=f,
-                purpose='assistants'
-            )
+        # Upload markdown file to Perplexity
+        file_obj = upload_file_to_perplexity(
+            file_path=temp_path,
+            purpose='assistants'
+        )
         
-        print(f"✅ Markdown file uploaded to OpenAI: {file_obj.id}")
+        print(f"✅ Markdown file uploaded to Perplexity: {file_obj['id']}")
         
         # Clean up temp file
         os.remove(temp_path)
@@ -163,7 +254,7 @@ Report Name: Test Analytics Report
 
 Use your code interpreter to analyze the data and create a professional PDF report. Focus on making it comprehensive and visually appealing for business stakeholders."""
 
-        assistant = client.beta.assistants.create(
+        assistant = create_perplexity_assistant(
             name="AI Report Generator - Test Analytics Report",
             description="Dedicated assistant for generating comprehensive PDF reports from analytics data",
             model="gpt-4o",
@@ -179,7 +270,7 @@ Use your code interpreter to analyze the data and create a professional PDF repo
         print(f"✅ Assistant created successfully: {assistant.id}")
         
         # Create thread
-        thread = client.beta.threads.create()
+        thread = create_perplexity_thread()
         print(f"✅ Thread created successfully: {thread.id}")
         
         # Test the complex message that fails
@@ -240,7 +331,7 @@ def test_simple_assistant():
     
     try:
         # Create simple assistant
-        assistant = client.beta.assistants.create(
+        assistant = create_perplexity_assistant(
             name="Simple Test Assistant",
             description="A simple test assistant",
             model="gpt-4o",
@@ -250,7 +341,7 @@ def test_simple_assistant():
         print(f"✅ Simple assistant created: {assistant.id}")
         
         # Create thread
-        thread = client.beta.threads.create()
+        thread = create_perplexity_thread()
         print(f"✅ Thread created: {thread.id}")
         
         # Test simple message
