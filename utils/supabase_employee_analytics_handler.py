@@ -8,7 +8,7 @@ import numpy as np
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple,Any
 import streamlit as st
 from supabase import create_client, Client
 
@@ -57,6 +57,25 @@ class SupabaseEmployeeAnalyticsHandler:
         import time
         self._cache[key] = data
         self._cache_timestamp[key] = time.time()
+    
+
+    def get_user_client_time_distribution_data(self, user_id: int, start_date: str, end_date: str) -> pd.DataFrame:
+        """Get user client time distribution data"""
+        params = {
+            'user_id_param': user_id,
+            'start_date_param': start_date,
+            'end_date_param': end_date
+        }
+        response = self.supabase.rpc('get_user_client_time_distribution', params).execute()
+        
+        # Convert response to DataFrame
+        if response.data:
+            df = pd.DataFrame(response.data)
+        else:
+            df = pd.DataFrame()
+        
+        return df
+            
     
     def get_all_employees_summary(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
@@ -618,19 +637,37 @@ class SupabaseEmployeeAnalyticsHandler:
         try:
             if period == 'daily':
                 # Use the detailed data Supabase function for daily data
-                response = self.supabase.rpc(
-                    'get_employee_detailed_data',
-                    {
-                        'user_id_param': user_id,
-                        'start_date_param': start_date,
-                        'end_date_param': end_date
-                    }
-                ).execute()
+                all_data = []
+                offset = 0
+                page_size = 1000
                 
-                if not response.data:
+                while True:
+                    response = self.supabase.rpc(
+                        'get_employee_detailed_data_v2',
+                        {
+                            'user_id_param': user_id,
+                            'start_date_param': start_date,
+                            'end_date_param': end_date,
+                            'limit_param': page_size,
+                            'offset_param': offset
+                        }
+                    ).execute()
+                    
+                    if not response.data:
+                        break
+                    
+                    all_data.extend(response.data)
+                    
+                    # If we got less than page_size rows, we've reached the end
+                    if len(response.data) < page_size:
+                        break
+                    
+                    offset += page_size
+                
+                if not all_data:
                     return pd.DataFrame()
                 
-                df = pd.DataFrame(response.data)
+                df = pd.DataFrame(all_data)
                 
                 # Add custom_field_items column for compatibility
                 df['custom_field_items'] = [[] for _ in range(len(df))]
@@ -696,6 +733,34 @@ def get_employee_data_supabase(supabase_url: str = None, supabase_key: str = Non
     except Exception as e:
         st.error(f"Error fetching employee data: {str(e)}")
         return pd.DataFrame(), {}
+    finally:
+        # Supabase client doesn't need explicit closing
+        pass
+def get_user_client_time_distribution(supabase_url: str = None, supabase_key: str = None,user_id: int = None, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """
+    Get user client time distribution data using Supabase
+    
+    Args:
+        supabase_url (str): Supabase project URL
+        supabase_key (str): Supabase API key
+        user_id (int): User ID
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
+        
+    Returns:
+        pd.DataFrame: Client time distribution data
+    """
+    handler = get_supabase_employee_analytics_handler(supabase_url, supabase_key)
+    
+    try:
+        # Get client time distribution data
+        client_data_df = handler.get_user_client_time_distribution_data(user_id, start_date, end_date)
+        
+        return client_data_df
+        
+    except Exception as e:
+        st.error(f"Error fetching client time distribution data: {str(e)}")
+        return pd.DataFrame()
     finally:
         # Supabase client doesn't need explicit closing
         pass

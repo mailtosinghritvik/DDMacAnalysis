@@ -17,7 +17,8 @@ load_dotenv()
 from utils.supabase_employee_analytics_handler import (
     get_supabase_employee_analytics_handler,
     get_employee_data_supabase,
-    get_employee_detailed_data_supabase
+    get_employee_detailed_data_supabase,
+    get_user_client_time_distribution
 )
 
 # Set page configuration
@@ -232,6 +233,34 @@ def create_employee_utilization_chart(employee_data):
     
     return fig, all_df, top_10_df
 
+def create_client_time_distribution_chart(client_data_df, username):
+    """Create a detailed chart showing client time distribution"""
+    if client_data_df.empty:
+        return None, None
+    
+    # Sort by total hours descending and take top 15
+    top_clients = client_data_df.nlargest(15, 'total_hours').copy()
+    
+    # Create a horizontal bar chart
+    fig = px.bar(
+        top_clients,
+        x='total_hours',
+        y='client_name',
+        orientation='h',
+        title=f'Client Time Distribution for {username} (Top 15)',
+        labels={'total_hours': 'Total Hours', 'client_name': 'Client Name'},
+        hover_data=['sessions', 'avg_session_hours', 'first_date', 'last_date']
+    )
+    
+    fig.update_layout(
+        height=600, 
+        yaxis={'categoryorder': 'total ascending'},
+        xaxis_title="Total Hours",
+        yaxis_title="Client Name"
+    )
+    
+    return fig, top_clients
+
 def create_employee_project_allocation(employee_data):
     """Create employee project allocation analysis using Supabase data"""
     if employee_data.empty:
@@ -239,8 +268,9 @@ def create_employee_project_allocation(employee_data):
     
     # Create allocation data from Supabase results
     allocation_data = []
-    for _, emp in employee_data.head(15).iterrows():  # Show top 15 employees
+    for _, emp in employee_data.head(10).iterrows():  # Show top 10 employees
         username = emp.get('employee_name', 'Unknown')
+        user_id = emp.get('employee_id', None)
         clients = emp.get('client_list', [])
         total_hours = emp.get('total_work_hours', 0)
         
@@ -254,19 +284,41 @@ def create_employee_project_allocation(employee_data):
         if not isinstance(clients, list):
             clients = []
         
-        if clients and total_hours > 0:
-            # Distribute hours among clients
-            hours_per_client = total_hours / len(clients) if clients else 0
+        if clients and total_hours > 0 and user_id:
+            # Get actual client time distribution data
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
+            client_data_df = get_user_client_time_distribution(supabase_url, supabase_key, user_id, '2020-01-01', '2100-01-01')
             
-            for client in clients:
-                if client and str(client).strip():  # Only add non-empty clients
-                    allocation_data.append({
-                        'Employee': username,
-                        'Project': str(client).strip(),
-                        'Hours': hours_per_client,
-                        'Estimated': hours_per_client * 0.9  # Assume 10% over-estimation
-                    })
-    
+            # Use the actual data instead of hardcoded values
+            if not client_data_df.empty:
+                for _, client_row in client_data_df.iterrows():
+                    client_name = client_row.get('client_name', '')
+                    client_hours = client_row.get('total_hours', 0)
+                    sessions = client_row.get('sessions', 0)
+                    avg_session_hours = client_row.get('avg_session_hours', 0)
+                    
+                    if client_name and str(client_name).strip():
+                        allocation_data.append({
+                            'Employee': username,
+                            'Project': str(client_name).strip(),
+                            'Hours': client_hours,
+                            'Estimated': client_hours * 0.9,  # Assume 10% over-estimation
+                            'Sessions': sessions,
+                            'Avg Session Hours': avg_session_hours
+                        })
+            else:
+                # Fallback to original logic if no data
+                hours_per_client = 200
+                for client in clients:
+                    if client and str(client).strip():
+                        allocation_data.append({
+                            'Employee': username,
+                            'Project': str(client).strip(),
+                            'Hours': hours_per_client,
+                            'Estimated': hours_per_client * 0.9
+                        })
+
     if not allocation_data:
         return None, None
     
@@ -277,7 +329,7 @@ def create_employee_project_allocation(employee_data):
         df,
         path=['Employee', 'Project'],
         values='Hours',
-        title='Employee Project Allocation (Top 15)'
+        title='Employee Project Allocation (Top 10)'
     )
     
     fig.update_layout(height=500)
@@ -391,6 +443,28 @@ def display_employee_kpis(kpis):
     with col5:
         st.metric("Overtime %", f"{kpis.get('overtime_pct', 0):.1f}%")
 
+# Add this function to create a client time distribution chart
+def create_client_time_distribution_chart(client_data):
+    """Create a chart showing client time distribution"""
+    if client_data.empty:
+        return None
+    
+    # Sort by total hours descending and take top 15
+    top_clients = client_data.nlargest(15, 'total_hours')
+    
+    # Create a bar chart
+    fig = px.bar(
+        top_clients,
+        x='total_hours',
+        y='client_name',
+        orientation='h',
+        title='Client Time Distribution (Top 15)',
+        labels={'total_hours': 'Total Hours', 'client_name': 'Client Name'}
+    )
+    
+    fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
+    return fig
+
 def main():
     """Main Employee Analytics Dashboard with Supabase Integration"""
     
@@ -475,6 +549,99 @@ def main():
             st.dataframe(styled_df, use_container_width=True)
         else:
             st.info("No performance data available to display")
+        
+        # Client Time Distribution Overview
+        st.subheader("🏢 Client Time Distribution Overview")
+        
+        # Get client time distribution for all employees
+        try:
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
+            
+            # Get a sample of employees to show client distribution
+            if not employee_data.empty:
+                sample_employees = employee_data.head(5)  # Show top 5 employees
+                
+                all_client_data = []
+                for _, emp in sample_employees.iterrows():
+                    user_id = emp.get('employee_id', None)
+                    username = emp.get('employee_name', 'Unknown')
+                    
+                    if user_id:
+                        try:
+                            client_data_df = get_user_client_time_distribution(supabase_url, supabase_key, user_id, '2020-01-01', '2100-01-01')
+                            
+                            if not client_data_df.empty:
+                                # Add employee name to each client record
+                                client_data_df['employee_name'] = username
+                                all_client_data.append(client_data_df)
+                        except Exception as e:
+                            st.warning(f"Could not load client data for {username}: {str(e)}")
+                
+                if all_client_data:
+                    # Combine all client data
+                    combined_client_data = pd.concat(all_client_data, ignore_index=True)
+                    
+                    # Create a chart showing client distribution across employees
+                    fig = px.bar(
+                        combined_client_data.nlargest(20, 'total_hours'),
+                        x='total_hours',
+                        y='client_name',
+                        color='employee_name',
+                        orientation='h',
+                        title='Top 20 Clients by Total Hours (Across All Employees)',
+                        labels={'total_hours': 'Total Hours', 'client_name': 'Client Name', 'employee_name': 'Employee'}
+                    )
+                    
+                    fig.update_layout(
+                        height=600,
+                        yaxis={'categoryorder': 'total ascending'},
+                        xaxis_title="Total Hours",
+                        yaxis_title="Client Name"
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Summary statistics
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Unique Clients", combined_client_data['client_name'].nunique())
+                    with col2:
+                        st.metric("Total Hours", f"{combined_client_data['total_hours'].sum():.1f}")
+                    with col3:
+                        st.metric("Total Sessions", combined_client_data['sessions'].sum())
+                    with col4:
+                        st.metric("Avg Session Length", f"{combined_client_data['avg_session_hours'].mean():.1f}h")
+                    
+                    # Top clients table
+                    st.subheader("📋 Top Clients Summary")
+                    top_clients_summary = combined_client_data.groupby('client_name').agg({
+                        'total_hours': 'sum',
+                        'sessions': 'sum',
+                        'avg_session_hours': 'mean',
+                        'employee_name': 'count'
+                    }).reset_index()
+                    
+                    top_clients_summary = top_clients_summary.rename(columns={
+                        'client_name': 'Client Name',
+                        'total_hours': 'Total Hours',
+                        'sessions': 'Total Sessions',
+                        'avg_session_hours': 'Avg Session Hours',
+                        'employee_name': 'Employee Count'
+                    })
+                    
+                    top_clients_summary = top_clients_summary.sort_values('Total Hours', ascending=False).head(15)
+                    top_clients_summary['Total Hours'] = top_clients_summary['Total Hours'].round(2)
+                    top_clients_summary['Avg Session Hours'] = top_clients_summary['Avg Session Hours'].round(2)
+                    
+                    st.dataframe(top_clients_summary, use_container_width=True)
+                else:
+                    st.info("No client time distribution data available")
+            else:
+                st.info("No employee data available for client analysis")
+                
+        except Exception as e:
+            st.error(f"Error loading client time distribution overview: {str(e)}")
     
     with tab4:
         st.subheader("Individual Employee Insights")
@@ -705,7 +872,6 @@ def main():
                             projects_df = pd.DataFrame({
                                 'Project': valid_clients,
                                 'Status': ['Active'] * len(valid_clients),
-                                'Hours Allocated': [np.random.uniform(20, 60) for _ in valid_clients]
                             })
                             st.dataframe(projects_df, use_container_width=True)
                         else:
@@ -716,6 +882,30 @@ def main():
                     st.info("No project data available for this employee")
             except Exception as e:
                 st.error(f"Error loading project data: {str(e)}")
+
+            # Client Time Distribution Section
+            st.subheader(f"Client Time Distribution - {selected_employee}")
+            try:
+                supabase_url = os.getenv("SUPABASE_URL")
+                supabase_key = os.getenv("SUPABASE_KEY")
+                client_data_df = get_user_client_time_distribution(supabase_url, supabase_key, user_id, '2020-01-01', '2100-01-01')
+
+                if not client_data_df.empty:
+                    # Create the client distribution chart
+                    client_chart = create_client_time_distribution_chart(client_data_df)
+                    if client_chart:
+                        st.plotly_chart(client_chart, use_container_width=True)
+                    
+                    # Also create a summary table
+                    st.subheader("Client Time Distribution Summary")
+                    summary_df = client_data_df[['client_name', 'total_hours', 'sessions', 'avg_session_hours', 'first_date', 'last_date']].copy()
+                    summary_df = summary_df.sort_values('total_hours', ascending=False)
+                    st.dataframe(summary_df, use_container_width=True)
+                else:
+                    st.info("No client time distribution data available for this employee.")
+            except Exception as e:
+                st.error(f"Error loading client time distribution data: {str(e)}")
+
         else:
             st.warning("Please select an employee to view detailed analytics")
 
