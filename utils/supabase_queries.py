@@ -373,7 +373,7 @@ class SupabaseQueryHandler:
                 'start_date_param': start_date,
                 'end_date_param': end_date
             }
-            df = self.execute_function('get_user_team_comparison', params)
+            df = self.execute_function('get_team_comparison_metrics', params)
             
             if not isinstance(df, pd.DataFrame) or df.empty:
                 logger.warning("⚠️ No team comparison data found")
