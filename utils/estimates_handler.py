@@ -6,10 +6,15 @@ Handles Excel file uploads, processes estimates, and integrates with Supabase
 import pandas as pd
 import numpy as np
 import io
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import random
 from supabase import create_client, Client
+
+# Load environment variables from .env file
+load_dotenv()
 
 class EstimatesHandler:
     """
@@ -24,8 +29,8 @@ class EstimatesHandler:
             supabase_url (str): Supabase project URL
             supabase_key (str): Supabase API key
         """
-        self.supabase_url = supabase_url or "https://your-project.supabase.co"
-        self.supabase_key = supabase_key or "your-supabase-anon-key"
+        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
+        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY")
         
         # Initialize Supabase client (demo mode for now)
         try:
@@ -167,8 +172,8 @@ class EstimatesHandler:
                     if isinstance(value, datetime):
                         record[key] = value.isoformat()
             
-            # Insert into Supabase
-            result = self.supabase.table('project_estimates').insert(records).execute()
+            # Insert into Supabase (using accubid_breakdowns table)
+            result = self.supabase.table('accubid_breakdowns').insert(records).execute()
             print(f"Saved {len(records)} estimates to Supabase")
             
         except Exception as e:
@@ -186,7 +191,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").eq('client', client_name).execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").eq('client_name', client_name).execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")
@@ -206,7 +211,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").eq('project', project_name).execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").eq('job_name', project_name).execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")
@@ -223,7 +228,7 @@ class EstimatesHandler:
         """
         if self.supabase:
             try:
-                result = self.supabase.table('project_estimates').select("*").execute()
+                result = self.supabase.table('accubid_breakdowns').select("*").execute()
                 return pd.DataFrame(result.data)
             except Exception as e:
                 print(f"Error fetching estimates from Supabase: {e}")

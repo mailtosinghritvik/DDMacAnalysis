@@ -584,14 +584,23 @@ def main():
         with nav_col1:
             if st.button("📊 Dashboard Analytics", use_container_width=True):
                 st.switch_page("pages/Dashboard.py")
-        
-        with nav_col2:
+            
             if st.button("👥 Employee Analytics", use_container_width=True):
                 st.switch_page("pages/Employee_Analytics.py")
         
-        with nav_col3:
+        with nav_col2:
             if st.button("📈 Project Analytics", use_container_width=True):
                 st.switch_page("pages/Project_Analytics.py")
+            
+            if st.button("📋 AccuBid Estimates", use_container_width=True):
+                st.switch_page("pages/Excel_Ingestion.py")
+        
+        with nav_col3:
+            if st.button("📧 Email Report Writer", use_container_width=True):
+                st.switch_page("pages/EmailReportWriter.py")
+            
+            if st.button("👷 Foreman Analysis", use_container_width=True):
+                st.switch_page("pages/Foreman_Analysis.py")
         
         # 7. Footer with system info
         st.markdown("---")

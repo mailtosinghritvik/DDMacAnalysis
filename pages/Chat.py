@@ -1,12 +1,105 @@
 import streamlit as st
 import os
-from openai import OpenAI
+import requests
+import json
 import pandas as pd
 from datetime import datetime
 import time
+def create_perplexity_assistant(name, description, model="llama-3.1-sonar-large-128k-online", tools=None):
+    """Create a Perplexity assistant"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "name": name,
+        "description": description,
+        "model": model,
+        "tools": tools or []
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/assistants", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create assistant: {response.text}")
+
+def create_perplexity_thread():
+    """Create a Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {"messages": []}
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to create thread: {response.text}")
+
+def upload_file_to_perplexity(file_path, purpose="assistants"):
+    """Upload file to Perplexity"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}"
+    }
+    
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        data = {"purpose": purpose}
+        
+        response = requests.post(f"{PERPLEXITY_BASE_URL}/files", headers=headers, files=files, data=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to upload file: {response.text}")
+
+def send_perplexity_message(thread_id, message, file_ids=None):
+    """Send message to Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "role": "user",
+        "content": message
+    }
+    
+    if file_ids:
+        data["file_ids"] = file_ids
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/messages", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to send message: {response.text}")
+
+def run_perplexity_thread(thread_id, assistant_id):
+    """Run Perplexity thread"""
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "assistant_id": assistant_id,
+        "thread_id": thread_id
+    }
+    
+    response = requests.post(f"{PERPLEXITY_BASE_URL}/threads/{thread_id}/runs", headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to run thread: {response.text}")
+
+
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 
 # Set page configuration
 st.set_page_config(
@@ -29,7 +122,7 @@ def initialize_chat():
 def create_assistant():
     """Create OpenAI assistant for data analysis"""
     try:
-        assistant = client.beta.assistants.create(
+        assistant = create_perplexity_assistant(
             name="DDMac Data Analysis Assistant",
             instructions="""You are a helpful data analysis assistant. You help users understand their data, 
             perform analysis, and provide insights. You can help with:
@@ -51,7 +144,7 @@ def create_assistant():
 def create_thread():
     """Create a new conversation thread"""
     try:
-        thread = client.beta.threads.create()
+        thread = create_perplexity_thread()
         return thread.id
     except Exception as e:
         st.error(f"Error creating thread: {str(e)}")

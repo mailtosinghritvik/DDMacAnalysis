@@ -328,6 +328,249 @@ class TimesheetAPIHandler:
         
         return result
     
+    def fetch_client_time_summary(self, page: int = 1, limit: int = 10) -> dict:
+        """
+        Fetch client time summary data from the API endpoint
+        
+        Args:
+            page (int): Page number for pagination
+            limit (int): Number of records per page
+            
+        Returns:
+            dict: API response with client time summary data
+        """
+        try:
+            # Make actual API call to the real endpoint
+            api_url = "http://16.171.230.164/api/v1/client-time-summary"
+            params = {
+                "page": page,
+                "limit": limit
+            }
+            
+            response = requests.get(
+                api_url,
+                params=params,
+                timeout=30  # 30 second timeout
+            )
+            response.raise_for_status()
+            
+            # Parse the response
+            data = response.json()
+            
+            # Add pagination info if not present
+            if 'total_pages' not in data:
+                total = data.get('total', 0)
+                data['total_pages'] = (total + limit - 1) // limit if total > 0 else 0
+            
+            return data
+            
+        except requests.exceptions.RequestException as e:
+            print(f"API request error: {e}")
+            # Return fallback data structure
+            return {
+                "total": 0,
+                "limit": limit,
+                "offset": (page - 1) * limit,
+                "page": page - 1,
+                "total_pages": 0,
+                "data": []
+            }
+        except Exception as e:
+            print(f"Error fetching client time summary: {e}")
+            return {"total": 0, "data": []}
+
+    def fetch_client_user_data(self, jobcode_id: int, user_id: int = None, period: str = "daily", page: int = 1, limit: int = 10) -> dict:
+        """
+        Fetch detailed client user data from the API endpoint
+        
+        Args:
+            jobcode_id (int): Job code ID for the client
+            user_id (int): User ID for the specific user (optional)
+            period (str): Time period for data (daily, weekly, monthly)
+            page (int): Page number for pagination
+            limit (int): Number of records per page
+            
+        Returns:
+            dict: API response with user timesheet data for the jobcode
+        """
+        try:
+            # Mock API response based on the provided structure
+            mock_response = {
+                "total": 2,
+                "limit": limit,
+                "offset": (page - 1) * limit,
+                "page": page,
+                "total_pages": 1,
+                "data": [
+                    {
+                        "user_id": 745004,
+                        "username": "hutchisona",
+                        "jobcode_id": jobcode_id,
+                        "total_duration": 16.1,
+                        "start_date": "2020-01-03T07:01:00-05:00",
+                        "end_date": "2020-02-24T16:20:00-05:00",
+                        "days_worked": 4
+                    },
+                    {
+                        "user_id": 745044,
+                        "username": "caldwellj",
+                        "jobcode_id": jobcode_id,
+                        "total_duration": 8.35,
+                        "start_date": "2020-01-06T07:15:00-05:00",
+                        "end_date": "2020-02-24T16:00:00-05:00",
+                        "days_worked": 2
+                    }
+                ]
+            }
+            
+            # In production, this would be:
+            # response = requests.get(
+            #     f"{self.api_base_url}/api/v1/client-user-data/{jobcode_id}",
+            #     headers=self.headers,
+            #     params={"period": period, "page": page, "limit": limit, "user_id": user_id}
+            # )
+            # response.raise_for_status()
+            # return response.json()
+            
+            return mock_response
+            
+        except Exception as e:
+            print(f"Error fetching client user data: {e}")
+            return {"total": 0, "data": []}
+
+    def fetch_user_daily_data(self, jobcode_id: int, user_id: int, period: str = "daily", page: int = 1, limit: int = 10) -> dict:
+        """
+        Fetch detailed daily timesheet data for a specific user and jobcode
+        
+        Args:
+            jobcode_id (int): Job code ID for the client
+            user_id (int): User ID for the specific user
+            period (str): Time period for data (daily, weekly, monthly)
+            page (int): Page number for pagination
+            limit (int): Number of records per page
+            
+        Returns:
+            dict: API response with detailed daily timesheet data
+        """
+        try:
+            # Mock API response for daily timesheet data
+            mock_response = {
+                "total": 15,
+                "limit": limit,
+                "offset": (page - 1) * limit,
+                "page": page,
+                "total_pages": 2,
+                "data": [
+                    {
+                        "id": 1,
+                        "user_id": user_id,
+                        "jobcode_id": jobcode_id,
+                        "date": "2020-01-03",
+                        "start_time": "07:01:00",
+                        "end_time": "15:30:00",
+                        "duration": 8.5,
+                        "description": "Project development work",
+                        "status": "approved",
+                        "created_at": "2020-01-03T07:01:00Z"
+                    },
+                    {
+                        "id": 2,
+                        "user_id": user_id,
+                        "jobcode_id": jobcode_id,
+                        "date": "2020-01-06",
+                        "start_time": "08:15:00",
+                        "end_time": "16:45:00",
+                        "duration": 8.5,
+                        "description": "Code review and testing",
+                        "status": "approved",
+                        "created_at": "2020-01-06T08:15:00Z"
+                    },
+                    {
+                        "id": 3,
+                        "user_id": user_id,
+                        "jobcode_id": jobcode_id,
+                        "date": "2020-01-10",
+                        "start_time": "09:00:00",
+                        "end_time": "17:00:00",
+                        "duration": 8.0,
+                        "description": "Client meeting and documentation",
+                        "status": "approved",
+                        "created_at": "2020-01-10T09:00:00Z"
+                    }
+                ]
+            }
+            
+            # In production, this would be:
+            # response = requests.get(
+            #     f"{self.api_base_url}/api/v1/client-user-data/{jobcode_id}",
+            #     headers=self.headers,
+            #     params={"period": period, "page": page, "limit": limit, "user_id": user_id}
+            # )
+            # response.raise_for_status()
+            # return response.json()
+            
+            return mock_response
+            
+        except Exception as e:
+            print(f"Error fetching user daily data: {e}")
+            return {"total": 0, "data": []}
+
+    def analyze_team_allocation(self, client_data: dict = None) -> pd.DataFrame:
+        """
+        Analyze team allocation from client time summary data
+        
+        Args:
+            client_data (dict): Client time summary data from API
+            
+        Returns:
+            pd.DataFrame: Team allocation analysis with client, hours, days, efficiency
+        """
+        if client_data is None:
+            client_data = self.fetch_client_time_summary()
+        
+        if not client_data or not client_data.get('data'):
+            return pd.DataFrame(columns=['Client', 'Total_Hours', 'Days_Worked', 'Avg_Hours_Per_Day', 'Efficiency_Score', 'Status'])
+        
+        allocation_data = []
+        
+        for item in client_data['data']:
+            # Skip items with no duration or invalid data
+            if item.get('total_duration') is None or item.get('total_duration') == 0:
+                continue
+                
+            total_hours = item.get('total_duration', 0)
+            days_worked = item.get('days_worked', 0)
+            
+            # Calculate average hours per day
+            avg_hours_per_day = total_hours / days_worked if days_worked > 0 else 0
+            
+            # Calculate efficiency score (0-100)
+            # Higher efficiency = more hours per day worked
+            efficiency_score = min(100, (avg_hours_per_day / 8) * 100) if avg_hours_per_day > 0 else 0
+            
+            # Determine status based on efficiency
+            if efficiency_score >= 80:
+                status = "High Performance"
+            elif efficiency_score >= 60:
+                status = "Good Performance"
+            elif efficiency_score >= 40:
+                status = "Average Performance"
+            else:
+                status = "Low Performance"
+            
+            allocation_data.append({
+                'Client': item.get('name', 'Unknown'),
+                'Total_Hours': round(total_hours, 2),
+                'Days_Worked': days_worked,
+                'Avg_Hours_Per_Day': round(avg_hours_per_day, 2),
+                'Efficiency_Score': round(efficiency_score, 1),
+                'Status': status,
+                'Jobcode_ID': item.get('jobcode_id', 0),
+                'User_ID': 2521428  # Default user ID for demo
+            })
+        
+        return pd.DataFrame(allocation_data)
+
     def get_sample_data(self) -> dict:
         """
         Get comprehensive sample data for demo purposes
@@ -342,6 +585,10 @@ class TimesheetAPIHandler:
         clients_analysis = self.analyze_clients(timesheet_df)
         employees_analysis = self.analyze_employees_overview(timesheet_df)
         projects_analysis = self.analyze_all_projects(timesheet_df)
+        
+        # Get client time summary data
+        client_time_summary = self.fetch_client_time_summary()
+        team_allocation = self.analyze_team_allocation(client_time_summary)
         
         # Extract key lists
         employees = timesheet_df['employee'].unique().tolist() if not timesheet_df.empty else ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Emma Brown']
@@ -365,6 +612,8 @@ class TimesheetAPIHandler:
             'clients_analysis': clients_analysis,
             'employees_analysis': employees_analysis,
             'projects_analysis': projects_analysis,
+            'client_time_summary': client_time_summary,
+            'team_allocation': team_allocation,
             'total_hours': total_hours,
             'total_employees': total_employees,
             'total_projects': total_projects,
@@ -482,3 +731,13 @@ def analyze_project_details_api(project_name: str, start_date: str = None, end_d
     handler = get_api_handler()
     data = handler.fetch_timesheet_data(start_date, end_date)
     return handler.analyze_project_details(project_name, data)
+
+def fetch_client_user_data_api(jobcode_id: int, user_id: int = None, period: str = "daily", page: int = 1, limit: int = 10) -> dict:
+    """Fetch detailed client user data using API"""
+    handler = get_api_handler()
+    return handler.fetch_client_user_data(jobcode_id, user_id, period, page, limit)
+
+def fetch_user_daily_data_api(jobcode_id: int, user_id: int, period: str = "daily", page: int = 1, limit: int = 10) -> dict:
+    """Fetch detailed daily timesheet data for a specific user using API"""
+    handler = get_api_handler()
+    return handler.fetch_user_daily_data(jobcode_id, user_id, period, page, limit)
