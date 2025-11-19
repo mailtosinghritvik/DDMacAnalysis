@@ -185,7 +185,7 @@ st.markdown("""
 def fetch_client_time_summary_direct(page=1, limit=1000):
     """Make direct API call to fetch client time summary data"""
     try:
-        api_url = "http://16.171.230.164/api/v1/client-time-summary"
+        api_url = "http://127.0.0.1:8000/api/v1/client-time-summary"
         params = {
             "page": page,
             "limit": limit
@@ -232,7 +232,7 @@ def safe_format_date(date_value):
 def fetch_client_user_data_direct(jobcode_id, user_id=None, page=1, limit=50):
     """Make direct API call to fetch client user data"""
     try:
-        api_url = f"http://16.171.230.164/api/v1/client-user-data/{jobcode_id}"
+        api_url = f"http://127.0.0.1:8000/api/v1/client-user-data/{jobcode_id}"
         params = {
             "page": page,
             "limit": limit
@@ -1374,7 +1374,7 @@ def main():
                             
                             # Add API logging
                             st.subheader("📡 API Call Information")
-                            api_url = f"http://16.171.230.164/api/v1/client-user-data/{jobcode_id}?page=1&limit=100&user_id={selected_user_id}"
+                            api_url = f"http://127.0.0.1:8000/api/v1/client-user-data/{jobcode_id}?page=1&limit=100&user_id={selected_user_id}"
                             
                             if detailed_user_data and detailed_user_data.get('data'):
                                 # Display detailed metrics
@@ -1678,7 +1678,7 @@ def main():
                         # The function is called earlier in this file:
                         # - Line ~1330 with user_id parameter for detailed user data
                         # - Line ~1270 without user_id parameter for all users data
-                        api_url = f"http://16.171.230.164/api/v1/client-user-data/{jobcode_id}?page=1&limit=100"
+                        api_url = f"http://127.0.0.1:8000/api/v1/client-user-data/{jobcode_id}?page=1&limit=100"
                         if selected_user != "All Users":
                             # Get user_id from the selected user string (format: "username (user_id)")
                             if "(" in selected_user and ")" in selected_user:
