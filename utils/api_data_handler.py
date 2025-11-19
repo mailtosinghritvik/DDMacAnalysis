@@ -341,7 +341,7 @@ class TimesheetAPIHandler:
         """
         try:
             # Make actual API call to the real endpoint
-            api_url = "http://16.171.230.164/api/v1/client-time-summary"
+            api_url = "http://127.0.0.1:8000/api/v1/client-time-summary"
             params = {
                 "page": page,
                 "limit": limit

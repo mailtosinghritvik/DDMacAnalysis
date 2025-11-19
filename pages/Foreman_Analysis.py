@@ -296,16 +296,22 @@ def main():
             st.subheader("Progress Input")
             
             # Get last progress value to set as minimum
-            last_progress = get_last_jobcode_progress(project_id, jobcode_id)
+            last_progress = int(get_last_jobcode_progress(project_id, jobcode_id) or 0)
             
-            # Display last progress info
-           
+            # Ensure slider value updates when project/jobcode selection changes
+            current_jobcode_context = (project_id, jobcode_id)
+            prev_jobcode_context = st.session_state.get("jobcode_prev_context")
+            if prev_jobcode_context != current_jobcode_context:
+                st.session_state["jobcode_prev_context"] = current_jobcode_context
+                st.session_state["jobcode_progress_slider"] = last_progress
+            elif "jobcode_progress_slider" not in st.session_state:
+                st.session_state["jobcode_progress_slider"] = last_progress
             
             progress = st.slider(
                 "Progress Percentage:",
-                min_value=0,
+                min_value=last_progress,
                 max_value=100,
-                value=last_progress,
+                value=st.session_state.get("jobcode_progress_slider", last_progress),
                 key="jobcode_progress_slider"
             )
             
@@ -378,15 +384,21 @@ def main():
             st.subheader("Progress Input")
             
             # Get last progress value to set as minimum
-            last_task_progress = get_last_task_progress(task_id)
+            last_task_progress = int(get_last_task_progress(task_id) or 0)
             
-            # Display last progress info
+            # Ensure slider value updates when task selection changes
+            prev_task_id = st.session_state.get("task_prev_id")
+            if prev_task_id != task_id:
+                st.session_state["task_prev_id"] = task_id
+                st.session_state["task_progress_slider"] = last_task_progress
+            elif "task_progress_slider" not in st.session_state:
+                st.session_state["task_progress_slider"] = last_task_progress
             
             progress = st.slider(
                 "Progress Percentage:",
-                min_value=0,
+                min_value=last_task_progress,
                 max_value=100,
-                value=last_task_progress,
+                value=st.session_state.get("task_progress_slider", last_task_progress),
                 key="task_progress_slider"
             )
             

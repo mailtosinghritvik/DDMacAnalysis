@@ -913,7 +913,7 @@ def main():
                             with col1:
                                 new_progress = st.slider(
                                     f"Progress Percentage (Current: {current_progress}%):",
-                                    min_value=0,
+                                    min_value=current_progress,
                                     max_value=100,
                                     value=current_progress,
                                     key="foreman_progress_slider"
